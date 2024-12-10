@@ -1,5 +1,7 @@
 """An original gamestate."""
 
+import random
+
 class GameState:
     """
     GameState provides the basic tools for analyzing different
@@ -22,6 +24,7 @@ class GameState:
         self.stacks = data["stacks"]
         self.hands = data["hands"]
         self.num_players = len(data["hands"])
+        self.turn = 0  # 2 * num_players possibilities
 
     def is_isomorphic(self, other):
         """Determines if two GameStates are isomorphic.
@@ -81,8 +84,49 @@ class GameState:
 
         return result
 
+    def get_actions(self):
+        player, is_deck = divmod(self.turn, 2)
+        options = []
+        if is_deck:
+            for card in self.deck:
+                options.append("Draw " + card)
+        else:
+            options.append("Clue")
+            for card in self.hands[player]:
+                options.append("Play " + card)
+                options.append("Discard " + card)
+
+        return options
+
 # TODO: phase out, likely access directly for speed
 def get_suit(card):
     return card.Suit
 def get_rank(card):
     return card.Rank
+
+def opening_position(num_players, variant_name, seed_name):
+    hand_size = 4
+    if num_players == 2:
+        hand_size = 5
+    elif num_players == 6:
+        hand_size = 3
+
+    variant_id = lookup(variant_name)
+    seed = "p" + num_players + "v" + variant_id + "s" + seed_name
+
+def initiate_deck(variant_name):
+    return [range(50)]
+
+# TODO: implement Hanab Live shuffling method
+def shuffle_deck(seed, deck):
+    """Shuffles deck according to a seed.
+
+    Args:
+        seed (str): a seed string as used on Hanab Live
+        deck (list): a list of cards
+
+    Returns:
+        list: a copy of deck sorted by seed
+    """
+    random.seed(seed)
+    return random.shuffle(deck[:])
