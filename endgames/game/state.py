@@ -112,10 +112,13 @@ def opening_position(num_players, variant_name, seed_name):
         hand_size = 3
 
     variant_id = lookup(variant_name)
-    seed = "p" + num_players + "v" + variant_id + "s" + seed_name
+    seed="p"+str(num_players)+"v"+str(variant_id)+"s"+str(seed_name)
+
+def lookup(var):
+    return len(var)
 
 def initiate_deck(variant_name):
-    return [range(50)]
+    return list(range(50))
 
 # TODO: implement Hanab Live shuffling method
 def shuffle_deck(seed, deck):
