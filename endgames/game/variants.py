@@ -5,11 +5,14 @@ This contains the basic logic for dealing with variants.
 
 import json
 import requests
+import inflection
+from endgames.game.io import *
+from endgames.game.suits import *
 
 
 MAX_TIME = 12
-VARIANT_URL = "https://raw.githubusercontent.com/Hanabi-Live/hanabi-live/main/packages/data/src/json/variants.json"
-VARIANT_PATH = './data/assets/variants.json'
+VARIANT_URL = "https://raw.githubusercontent.com/Hanabi-Live/hanabi-live/main/packages/game/src/json/variants.json"
+VARIANT_PATH = './assets/variants.json'
 
 
 class VariantJSON(json.JSONEncoder):
@@ -21,21 +24,58 @@ class VariantJSON(json.JSONEncoder):
 class Variant:
     """Defines a class for variants."""
     # pylint: disable-next=redefined-builtin
-    def __init__(self, id, name, suits, *args, **kwargs):
-        self.id = id
+    def __init__(self, id, name, suits, **kwargs):
         self.name = name
-        self.suits = suits
-        self.args = args
-        self.kwargs = kwargs
+        self.id = id
+        self.suit_names = suits
+        self.suits = []
+        for suit in suits:
+            if "Reversed" in suit:
+                suit = suit[:-9]
+            self.suits.append(find_suit(suit))
+
+        self.clue_colors = None
+        self.clue_ranks = [1, 2, 3, 4, 5]
+        self.color_clues_touch_nothing = None
+        self.rank_clues_touch_nothing = None
+        self.special_rank = None
+        self.special_all_clue_colors = None
+        self.special_all_clue_ranks = None
+        self.special_no_clue_colors = None
+        self.special_no_clue_ranks = None
+        self.special_deceptive = None
+        self.odds_and_evens = None
+        self.funnels = None
+        self.chimneys = None
+        self.up_or_down = None
+        self.critical_fours = None
+        self.sudoku = None
+        self.critical_rank = None
+        self.stack_size = None
+
+        for key, value in kwargs.items():
+            key = inflection.underscore(key)
+            setattr(self, key, value)
 
     def get_max_score(self):
         """Returns the maximum possible score in this variant."""
-        return 5 * len(self.suits)
+        num_suits = len(self.suits)
+        try:
+            stack_size = self.stack_size
+        except AttributeError:
+            stack_size = None
+        try:
+            if stack_size is None and self.sudoku:
+                stack_size = num_suits
+        except AttributeError:
+            stack_size = 5  # default value
+
+        return stack_size * num_suits
 
 
 def update_variants():
     """Pulls from github. To fold into io."""
-    response = requests.get(VARIANT_URL, timeout=MAX_TIME).json()
+    response = fetch_json(VARIANT_URL)
     with open(VARIANT_PATH, 'w', encoding="utf8") as json_file:
         json.dump(response, json_file)
     print("Updated variants.")
