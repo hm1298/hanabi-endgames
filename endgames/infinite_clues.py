@@ -1,7 +1,10 @@
 """Hanabi with infinite clues."""
 
+from fractions import Fraction
 from typing import Callable
 import itertools
+
+# TODO: consider using gmpy2 or quicktions for faster fractions
 
 class Hanabi:
     """Generic base class for hanabi-like games.
@@ -43,6 +46,14 @@ class Card(tuple):
         self.rank = rank
         super().__init__((suit_index, rank))
 
+class Action():
+    """Generic class for player actions."""
+
+    def __init__(self, a_type, a_target, a_value):
+        self.type = a_type
+        self.target = a_target
+        self.value = a_value
+
 class InfiniteClueHanabi(Hanabi):
     """Class for infinite clue hanabi games."""
 
@@ -50,7 +61,11 @@ class InfiniteClueHanabi(Hanabi):
         hand_sizes = [len(hand) for hand in player_hands]
         super().__init__(deck, stacks, len(player_hands), hand_sizes)
 
-    def get_successors(self, gs, swap=True):
+    def get_actions(self, gs):
+        """Returns list of possible actions for player 1."""
+        return list(range(len(gs[4]) + 1))
+
+    def get_successors(self, gs, action, swap=True):
         """Returns dictionary of successor gamestates.
 
         (key, value) pairs have form (successor_state, probability)
@@ -70,12 +85,15 @@ class InfiniteClueHanabi(Hanabi):
         self.stacks = stacks
 
         # TODO: deal with empty deck
+        deck_size = len(deck) + trash
+        if deck_size <= 0:
+            return 
         increment = 1 / (len(deck) + trash)
         deck_lookup = {}
         if trash:
             deck_lookup[(0, 1)] = trash * increment
         for i, card in enumerate(deck):
-            new_deck = deck[:i] + deck[i+1:]
+            new_deck = deck[:i] + deck[i+1:]  # expensive??
             deck_lookup[card] = [deck_lookup.get(card, 0) + increment, new_deck]
 
         # actions in player 1's hand
@@ -145,6 +163,10 @@ class InfiniteClueHanabi(Hanabi):
         """Returns True if won."""
         return sum(gs[0]) == 25  # probably should change gamestate
 
+    def check_loss_condition(self, gs):
+        """Returns True if lost."""
+        return gs[1] == -2
+
 class Gamestate:
     """Class for managing gamestates in hanabi-like games."""
 
@@ -196,10 +218,10 @@ def dp():
     # TODO: make this work. look at maxing return rather than avging
     while stack:
         curr = stack.pop()
-        probs = hb.get_successors(curr)
+        probs = hb.get_successors(curr, None)
 
         # try to solve the gamestate now, while checking if possible
-        solved, ans, state = True, 0.0, None
+        solved, ans, state = True, Fraction(), None
         gen = iter(probs.items())
         for state, prob in gen:
             if prob == 0:  # may be unnecessary
@@ -239,4 +261,4 @@ if __name__ == "__main__":
           ())  # second player's active cards
     print(gs)
     hb = InfiniteClueHanabi(None, None, [])
-    print(hb.get_successors(gs))
+    print(hb.get_successors(gs, None))
