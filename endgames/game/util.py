@@ -81,6 +81,6 @@ def interpret_card(n):
     return x, y
 
 if __name__ == "__main__":
-    var = "No Variant"
-    seed = "p2v0scommendation-splintering-gondolas"
-    print_deck(get_deck(var, seed))
+    VAR = "No Variant"
+    SEED = "p2v0scommendation-splintering-gondolas"
+    print_deck(get_deck(VAR, SEED))
