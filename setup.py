@@ -2,4 +2,7 @@
 
 from setuptools import setup
 
-setup(name='hanabi-endgames', version='1.0', packages=['hanabi-endgames'])
+setup(name='endgames', version='1.0', packages=['endgames'], install_requires=[
+    "requests",
+    "inflection"
+])
