@@ -33,3 +33,24 @@ def fetch_json(url):
         print(reason)
 
     return data
+
+def read_printout(file_path):
+    try:
+        decks = []
+        with open(file_path, 'r', encoding="utf-8") as file:
+            for line in file.readlines():
+                line = line.strip()
+                line = line.strip("[]")
+                deck = [el.strip() for el in line.split(",")]
+                decks.append(deck)
+        return decks
+    except FileNotFoundError as e:
+        reason = f"Error: Failed to find file at {file_path}: {e}"
+        logging.error(reason)
+        print(reason)
+        raise e
+    except IOError as e:
+        reason = f"Error: Failed to read file at {file_path}: {e}"
+        logging.error(reason)
+        print(reason)
+        raise e

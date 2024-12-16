@@ -5,6 +5,7 @@ import itertools
 import random
 from endgames.game.suits import update_suits
 from endgames.game.variants import *
+from endgames.game.io import *
 
 def lookup_variant(variant_name):
     """Gives Variant object that has name variant_name.
@@ -27,6 +28,7 @@ class Deck:
 
         self.seed = None
         self.variant = variant
+        self.deck = None  # to be overwritten
         self._init_deck(variant)
 
     def _init_deck(self, variant: Variant):
@@ -58,6 +60,30 @@ class Deck:
 
         self.deck = deck
 
+    def set_deck(self, deck):
+        self.deck = []
+        for word in deck:
+            rank = 0
+            for index, char in enumerate(word):
+                if char in "12345":
+                    rank = int(char)
+                    word = word[:index] + word[index + 1:]
+                    word.strip()
+                    break
+            suit = "Chromatic"
+            for attempt in self.variant.suits:
+                if attempt.abbreviation is not None and word.lower() == attempt.abbreviation.lower():
+                    suit = attempt.name
+                    break
+                if attempt.id is not None and word.lower() == attempt.id.lower():
+                    suit = attempt.name
+                    break
+                if word.lower() == attempt.name.lower():
+                    suit = attempt.name
+                    break
+            suit_index = self.variant.suit_names.index(suit) + 1  # 1-indexed
+            self.deck.append(Card(suit_index, rank))
+
     def print(self, cutoff=None):
         if cutoff is None:
             cutoff = len(self.deck)
@@ -82,7 +108,7 @@ class Deck:
         paths_through_deck = self._suitify()
         proved_infeasible = True
         for path in paths_through_deck:
-            print(path)
+            # print(sorted(list(path)))
             path = self._pathify(path)
             if self._check_for_capacity_loss(path):
                 continue
@@ -95,7 +121,7 @@ class Deck:
     def _suitify(self):
         locations = {}
         for loc, card in enumerate(self.deck):
-            rank, suit = card.interpret()
+            suit, rank = card.interpret()
             if suit not in locations:
                 locations[suit] = {}
             if rank not in locations[suit]:
@@ -141,18 +167,17 @@ class Deck:
         return False
 
     def _check_for_capacity_loss(self, path):
-        path = path[::-1]
         hand = set()
-        index = 0
         stacks = [0, 0, 0, 0, 0]
-        while path:
-            curr = path.pop()
+        for index, curr in enumerate(path):
+            # print(stacks)
+            # print([f"({x >> 31}, {x & 0x7FFFFFFF})" for x in hand])
             if not curr:
                 continue
             card = self.deck[index]
             suit, rank = card.interpret()
             suit -= 1  # 0-indexing
-            if stacks[suit] == rank + 1:  # i.e., playable
+            if stacks[suit] == rank - 1:  # i.e., playable
                 newly_playable = card.value + 1
                 stacks[suit] += 1
                 while newly_playable in hand:
@@ -162,6 +187,8 @@ class Deck:
             else:
                 hand.add(card.value)
                 if len(hand) == 10:  # max capacity
+                    # print(stacks)
+                    # print([f"({x >> 31}, {x & 0x7FFFFFFF})" for x in hand])
                     return True
         return False
 
@@ -175,10 +202,22 @@ class Card:
         y = self.value & 0x7FFFFFFF
         return x, y
 
+def create_bespoke_deck(deck, variant=None):
+    if variant is None:
+        variant = "No Variant"
+    result = Deck(variant)
+    result.set_deck(deck)
+    return result
+
 if __name__ == "__main__":
-    VAR = "No Variant"
-    SEED = "p2v0scommendation-splintering-gondolas"
-    DECK = Deck(VAR)
-    DECK.shuffle(SEED)
-    DECK.print()
-    print(DECK.check_for_infeasibility())
+    # VAR = "No Variant"
+    # SEED = "p2v0scommendation-splintering-gondolas"
+    # DECK = Deck(VAR)
+    # DECK.shuffle(SEED)
+    # DECK.print()
+    # print(DECK.check_for_infeasibility())
+    FILE = "assets/rama_hard_decks.txt"
+    D_NO = 8
+    for i, deck in enumerate(read_printout(FILE)):
+        DECK = create_bespoke_deck(deck)
+        print(DECK.check_for_infeasibility())
