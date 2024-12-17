@@ -32,6 +32,11 @@ class Deck:
         self._init_deck(variant)
 
     def _init_deck(self, variant: Variant):
+        """Initializes self.deck. Requires hanabi game logic.
+
+        Args:
+            variant (Variant): a Hanab Live game variant
+        """
         deck = []
         for suit_index, suit in enumerate(variant.suits):
             for rank in variant.clue_ranks:
@@ -61,6 +66,11 @@ class Deck:
         self.deck = deck
 
     def set_deck(self, deck):
+        """Setter method for self.deck in case of unseeded deck.
+
+        Args:
+            deck (list): a list of strings representing cards
+        """
         self.deck = []
         for word in deck:
             rank = 0
@@ -84,7 +94,16 @@ class Deck:
             suit_index = self.variant.suit_names.index(suit) + 1  # 1-indexed
             self.deck.append(Card(suit_index, rank))
 
+    # TODO: use __repr__ instead? decide
     def print(self, cutoff=None):
+        """Prints the deck.
+
+        Renders cards as ordered pairs of numbers (a, b). So this is a
+        suit-agnostic way of printing.
+
+        Args:
+            cutoff (int, optional): # cards to print. Defaults to None.
+        """
         if cutoff is None:
             cutoff = len(self.deck)
         print(" ".join([str(card.interpret()) for card in self.deck[:cutoff]]))
@@ -105,10 +124,34 @@ class Deck:
         random.shuffle(self.deck)
 
     def check_for_infeasibility(self):
+        """Checks if the deck is impossible to win.
+
+        Returning True indicates that the deck is provably infeasible,
+        i.e. impossible to win. Returning False indicates that the deck
+        may or may not be possible to win. Currently, the checks cover
+        all hand capacity losses and pace losses but not losses due to
+        clue count or losses due to hand distribution (which may other-
+        wise be viewed as a type of pace loss).
+
+        In other words, the current checks solve a hanabi-like game in
+        which there is 1 hand of sum(len(hand) for hand in hands) cards,
+        the last card in the deck must be played last, and no more than
+        len(hands) cards may be played after the final card is drawn.
+        Additionally, the player has perfect information of the deck.
+
+        Currently in the process of trying to make this slightly more
+        capable of tackling different hanabi variants or game sizes.
+
+        Args:
+            num_players (int): Number of players. Defaults to 2.
+            hand_cap (int): Cumulative hand size of ALL players.
+
+        Returns:
+            bool: able to prove the deck is infeasible?
+        """
         paths_through_deck = self._suitify()
         proved_infeasible = True
         for path in paths_through_deck:
-            # print(sorted(list(path)))
             path = self._pathify(path)
             if self._check_for_capacity_loss(path):
                 continue
@@ -170,8 +213,6 @@ class Deck:
         hand = set()
         stacks = [0, 0, 0, 0, 0]
         for index, curr in enumerate(path):
-            # print(stacks)
-            # print([f"({x >> 31}, {x & 0x7FFFFFFF})" for x in hand])
             if not curr:
                 continue
             card = self.deck[index]
@@ -187,11 +228,10 @@ class Deck:
             else:
                 hand.add(card.value)
                 if len(hand) == 10:  # max capacity
-                    # print(stacks)
-                    # print([f"({x >> 31}, {x & 0x7FFFFFFF})" for x in hand])
                     return True
         return False
 
+# TODO: fix
 class Card:
     """A card with suit and rank"""
     def __init__(self, suit_index, rank):
@@ -203,6 +243,7 @@ class Card:
         return x, y
 
 def create_bespoke_deck(deck, variant=None):
+    """Create deck from input. Assumes No Variant."""
     if variant is None:
         variant = "No Variant"
     result = Deck(variant)

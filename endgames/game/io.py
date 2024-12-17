@@ -1,3 +1,5 @@
+"""I/O methods for reading input from files and web sources."""
+
 import requests
 import logging
 
@@ -8,6 +10,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 MAX_TIME = 12
 
 def fetch(url):
+    """Fetches page from url using requests.
+
+    Minor error handling.
+
+    Args:
+        url (str): a URL to access
+
+    Returns:
+        Response: a Response object from url
+    """
     try:
         response = requests.get(url, timeout=MAX_TIME)
         response.raise_for_status()
@@ -24,6 +36,14 @@ def fetch(url):
     return response
 
 def fetch_json(url):
+    """Fetches JSON from url using requests.
+
+    Args:
+        url (str): a URL to access
+
+    Returns:
+        Any: an interpreted JSON, typically a dict or list of dicts
+    """
     response = fetch(url)
     try:
         data = response.json()
@@ -35,6 +55,14 @@ def fetch_json(url):
     return data
 
 def read_printout(file_path):
+    """Reads in data, typically hanabi decks, from a file
+
+    Args:
+        file_path (str): the file path
+
+    Returns:
+        list: list of file lines, interpreted as a hanabi deck
+    """
     try:
         decks = []
         with open(file_path, 'r', encoding="utf-8") as file:
