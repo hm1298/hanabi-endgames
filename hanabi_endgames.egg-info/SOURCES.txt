@@ -1,9 +1,0 @@
-README.md
-setup.py
-endgames/__init__.py
-endgames/infinite_clues.py
-endgames/visible_hands.py
-hanabi_endgames.egg-info/PKG-INFO
-hanabi_endgames.egg-info/SOURCES.txt
-hanabi_endgames.egg-info/dependency_links.txt
-hanabi_endgames.egg-info/top_level.txt
