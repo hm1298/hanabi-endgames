@@ -4,10 +4,9 @@ This contains the basic logic for dealing with variants.
 # pylint: disable=invalid-name
 
 import json
-import requests
 import inflection
-from endgames.game.io import *
-from endgames.game.suits import *
+from endgames.game.io import fetch_json
+from endgames.game.suits import find_suit
 
 
 MAX_TIME = 12
