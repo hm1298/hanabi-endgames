@@ -207,11 +207,16 @@ class Deck:
     def _check_for_pace_loss(self, path, num_final_plays):
         index = len(self.deck) - 1
         curr = path[index]
-        # checks for BDR loss
-        if curr and self.deck[index].interpret()[1] != 5:
-            return True
         pace = num_final_plays
         stacks = [0, 0, 0, 0, 0]
+        # checks for BDR loss
+        if curr:
+            card = self.deck[index]
+            if card.interpret()[1] != 5:
+                return True
+            suit, rank = card.interpret()
+            suit -= 1  # 0-indexing
+            stacks[suit] = max(stacks[suit], 6 - rank)  # should be 1
         while pace < 25:  # 25 is max score
             pace += 1
             index -= 1
