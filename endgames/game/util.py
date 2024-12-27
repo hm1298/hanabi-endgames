@@ -136,7 +136,7 @@ class Deck:
         random.seed(seed)
         random.shuffle(self.deck)
 
-    def check_for_infeasibility(self, num_players=2, hand_cap=None):
+    def check_for_infeasibility(self):
         """Checks if the deck is impossible to win.
 
         Returning True indicates that the deck is provably infeasible,
@@ -163,23 +163,72 @@ class Deck:
         Returns:
             bool: able to prove the deck is infeasible?
         """
-        if hand_cap is None:
-            hand_cap = num_players * lookup_hand_size(num_players)
+        pf = PathFinder(self, 2, 5)
+        return pf.check_for_infeasibility()
+
+class PathFinder:
+    """A multi-use solver for hanabi-like decks"""
+    def __init__(self, deck: Deck, num_players=2, hand_size=None):
+        self.deck = deck
+        self.num_players = num_players
+        if hand_size is None:
+            hand_size = lookup_hand_size(num_players)
+        self.hand_size = hand_size
+        self.capacity = hand_size * num_players
+
+    def check_for_infeasibility(self):
+        """Checks if the deck is impossible to win.
+
+        Returning True indicates that the deck is provably infeasible,
+        i.e. impossible to win. Returning False indicates that the deck
+        may or may not be possible to win. Currently, the checks cover
+        all hand capacity losses and pace losses but not losses due to
+        clue count or losses due to hand distribution (which may other-
+        wise be viewed as a type of pace loss).
+
+        In other words, the current checks solve a hanabi-like game in
+        which there is 1 hand of sum(len(hand) for hand in hands) cards,
+        the last card in the deck must be played last, and no more than
+        len(hands) cards may be played after the final card is drawn.
+        Additionally, the player has perfect information of the deck.
+
+        Currently in the process of trying to make this slightly more
+        capable of tackling different hanabi variants or game sizes.
+        It still only works for 5 Suit (see _check_for_pace_loss()).
+
+        Args:
+            num_players (int): Number of players. Defaults to 2.
+            hand_cap (int): Cumulative hand size of ALL players.
+
+        Returns:
+            bool: able to prove the deck is infeasible?
+        """
         paths_through_deck = self._suitify()
         proved_infeasible = True
         for path in paths_through_deck:
             path = self._pathify(path)
-            if self._check_for_capacity_loss(path, hand_cap):
+            if self._check_for_capacity_loss(path, self.capacity):
                 continue
-            if self._check_for_pace_loss(path, num_players):
+            if self._check_for_pace_loss(path, self.num_players):
                 continue
             proved_infeasible = False
             break
         return proved_infeasible
 
+    def check_for_pace_loss(self):
+        """Checks for pace loss with infinite hand size."""
+        cards = set()
+        locations = []
+        for card in self.deck.deck:
+            if card.value not in cards:
+                cards.add(card.value)
+                locations.append(card.value)
+        path = self._pathify(locations)
+        return self._check_for_pace_loss(path, self.num_players)
+
     def _suitify(self):
         locations = {}
-        for loc, card in enumerate(self.deck):
+        for loc, card in enumerate(self.deck.deck):
             suit, rank = card.interpret()
             if suit not in locations:
                 locations[suit] = {}
@@ -205,13 +254,13 @@ class Deck:
         return path
 
     def _check_for_pace_loss(self, path, num_final_plays):
-        index = len(self.deck) - 1
+        index = len(self.deck.deck) - 1
         curr = path[index]
         pace = num_final_plays
         stacks = [0, 0, 0, 0, 0]
         # checks for BDR loss
         if curr:
-            card = self.deck[index]
+            card = self.deck.deck[index]
             if card.interpret()[1] != 5:
                 return True
             suit, rank = card.interpret()
@@ -222,7 +271,7 @@ class Deck:
             index -= 1
             curr = path[index]
             if curr:
-                card = self.deck[index]
+                card = self.deck.deck[index]
                 suit, rank = card.interpret()
                 suit -= 1  # 0-indexing
                 stacks[suit] = max(stacks[suit], 6 - rank)
@@ -236,7 +285,7 @@ class Deck:
         for index, curr in enumerate(path):
             if not curr:
                 continue
-            card = self.deck[index]
+            card = self.deck.deck[index]
             suit, rank = card.interpret()
             suit -= 1  # 0-indexing
             if stacks[suit] == rank - 1:  # i.e., playable
@@ -257,11 +306,11 @@ class Card:
     """A card with suit and rank"""
     def __init__(self, suit_index, rank):
         self.value = (suit_index << 31) | rank
+        self.suit = suit_index
+        self.rank = rank
     def interpret(self):
         """Returns (suit index, rank)."""
-        x = self.value >> 31
-        y = self.value & 0x7FFFFFFF
-        return x, y
+        return self.suit, self.rank
 
 def create_bespoke_deck(deck, variant=None):
     """Create deck from input. Assumes No Variant."""
@@ -281,5 +330,7 @@ if __name__ == "__main__":
     FILE = "assets/rama_hard_decks.txt"
     D_NO = 8
     for i, d in enumerate(read_printout(FILE)):
+        if i != D_NO:
+            continue
         DECK = create_bespoke_deck(d)
         print(DECK.check_for_infeasibility())
