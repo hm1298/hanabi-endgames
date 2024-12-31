@@ -1,7 +1,9 @@
 """Methods for fetching initial positions and other utility."""
 
+from bisect import bisect
 import itertools
 import random
+from collections import Counter
 from endgames.game.variants import Variant, VARIANT_NAMES_DICT
 from endgames.game.io import read_printout
 
@@ -203,7 +205,8 @@ class PathFinder:
         Returns:
             bool: able to prove the deck is infeasible?
         """
-        paths_through_deck = self._suitify()
+        suits_to_locs = self._split_into_suits()
+        paths_through_deck = self._suitify(suits_to_locs)
         proved_infeasible = True
         for path in paths_through_deck:
             path = self._pathify(path)
@@ -226,8 +229,8 @@ class PathFinder:
         path = self._pathify(locations)
         return self._check_for_pace_loss(path, self.num_players)
 
-    def _suitify(self):
-        locations = {}
+    def _split_into_suits(self):
+        locations = {}  # suit to rank to deck indices
         for loc, card in enumerate(self.deck.deck):
             suit, rank = card.interpret()
             if suit not in locations:
@@ -242,10 +245,42 @@ class PathFinder:
                 if rank in (1, 5):
                     ranks_to_locs[rank] = [min(locs)]
 
+        return locations
+
+    def _suitify(self, locations):
+        score_lb = [[0] * 50 for _ in range(5)]  # minimal score of an All or Nothing agent that must eventually play all cards and plays cards as the last copy of a playable card is drawn
+
+        # pace calculation for each suit
+        for suit, ranks_to_locs in locations.items():
+            index = suit - 1
+            locs = []
+            for rank in range(1, 6):
+                locs.append(max(ranks_to_locs[rank]))
+                loc = max(locs)
+                score_lb[index][loc] = rank
+
+        for suit, ranks_to_locs in locations.items():
+            paths = itertools.product(*ranks_to_locs.values())
+            for path in paths:
+                """validate in some way, should make 3 checks?
+                DOES NOT CONTAIN:
+                - a discard of a playable (...a...a...)
+                - a save of an unplayable whose duplicate is later and also unplayable (...b...b...a...)
+                - a save of a connector that is not needed to play for pace reasons (...b...a...b...c...)
+                """
+                # self._verify_suit_path(path)
+                pass
         paths = []
         for ranks_to_locs in locations.values():
             paths += ranks_to_locs.values()
         return itertools.product(*paths)
+
+    def _suit_pace_helper(self, scores):
+        return scores
+
+    #TODO: implement
+    def _suit_checker(self):
+        return "hi"
 
     def _pathify(self, locs):
         path = [False] * 50
@@ -300,6 +335,123 @@ class PathFinder:
                 if len(hand) == capacity:
                     return True
         return False
+
+class ShapeIdentifier:
+    def __init__(self, cards, locations, first_one_plays=True,
+                 playables_play=True, last_dupe_saved=True):
+        self.cards = tuple(cards)
+        self.counts = Counter(card.rank for card in self.cards)
+        self.locations = locations
+        self.valid_subsequences = {}
+        self.first_one_plays = first_one_plays or playables_play
+        self.playables_play = playables_play
+        self.last_dupe_saved = last_dupe_saved
+
+        self._index = 1
+        self._path = []
+        self._playable = [None, -1, None, None, None, None]
+
+    def set_cards(self, cards):
+        """Setter function for cards."""
+        self.cards = tuple(cards)
+
+        self._index = 1
+        self._path = []
+        self._playable = [None, -1, None, None, None, None]
+
+    def identify(self, cards=None):
+        """Identifies possible paths."""
+        if cards is not None:
+            self.set_cards(cards)
+        if self.cards in self.valid_subsequences:
+            return self.valid_subsequences[self.cards]
+
+        # the meat of the program
+        is_playable = [None, True, False, False, False, False]
+        first_playable = [None, self.first_one_plays, False, False, False, False]  # only changes if we care to update first ones?
+        last_unplayable = [None, False, False, False, False, False]  # needed?
+        guaranteed_held = [None, False, False, False, False, False]
+        occurrences = [None, 0, 0, 0, 0, 0]
+        options = [None, [], [], [], [], []]
+        for card in self.cards:
+            rank = card.rank
+            occurrences[rank] += 1
+            if occurrences[rank] == 1:
+                options[rank].append(card.location)
+                if (is_playable[rank] and self.playables_play) or \
+                    (rank == 1 and self.first_one_plays):
+                    self._update_playables(rank, guaranteed_held, is_playable)
+                    first_playable[rank] = True
+            elif occurrences[rank] == self.counts[rank]:
+                guaranteed_held[rank] = True
+                if is_playable[rank] and first_playable[rank]:
+                    continue
+                ...
+
+    """def identify2(self):
+        rank, prepath = self._index, self._path
+        start_index, end_index = 0, len(self.locations[rank])
+        constraint1, constraint2 = True, True  # ...b...b...a... or ...a...a...
+        while start_index != end_index and (constraint1 or constraint2):
+            if self.locations[start_index] < self._playable_at[rank]:
+                start_index += 1
+            else:
+                constraint1 = False
+            if self.locations[end_index] > self._playable_at[rank]:
+                end_index -= 1
+            else:
+                constraint2 = False
+        if not constraint1:
+            start_index -= 1
+        if not constraint2:
+            end_index += 1"""
+
+    def identify3(self):
+        self._index += 1
+        rank = self._index
+        if rank > len(self.locations):
+            answer = self._path
+            self._index -= 1
+            self._path = self._path[-1]
+            return answer
+        locations = self.locations[rank]
+        playable = self._playable[rank]
+
+        attempt = locations[0]
+        if attempt > playable:
+            self._helper(attempt, attempt)
+
+        attempt = locations[-1]
+        if attempt < playable:
+            self._helper(attempt, playable)
+
+        left = bisect(locations, self._playable[rank])
+        path1 = self._helper(locations[left], rank)
+        self._index = rank
+        self._path = self._path[:rank - 1]
+        if self._index + 1 < len(self._playable):
+            self._playable[rank + 1] = None
+        path2 = self._helper(locations[left + 1], rank)
+
+        return path1 + path2
+
+    def _helper(self, location, playable):
+        self._path.append(location)
+        if self._index + 1 < len(self._playable):
+            self._playable[self._index + 1] = playable
+        return self.identify()
+
+    def _update_playables(self, index, in_hand, is_playable):
+        """Helper function for self.identify().
+
+        Based on cards guaranteed to be held, updates each subsequent
+        card to be playable. Mutates list is_playable.
+        """
+        index += 1
+        is_playable[index] = True
+        while in_hand[index] and index <= 5:
+            index += 1
+            is_playable[index] = True
 
 # TODO: fix
 class Card:
