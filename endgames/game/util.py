@@ -219,6 +219,8 @@ class PathFinder:
         paths_through_deck = self._suitify2(suit_to_locs, suit_to_ordering)
         proved_infeasible = True
         for path in paths_through_deck:
+            if isinstance(path[0], list):
+                path = itertools.chain(*path)
             path = self._pathify(path)
             if self._check_for_capacity_loss(path, self.capacity):
                 continue
@@ -392,7 +394,7 @@ class ShapeIdentifier:
             answer = self._path
             self._index -= 1
             self._path = self._path[:-1]
-            return answer
+            return [answer]
         locations = self.locations[rank]
         playable = self._playable[rank]
         # print(rank)
