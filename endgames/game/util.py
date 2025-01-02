@@ -254,7 +254,6 @@ class PathFinder:
             locations[suit][rank].append(loc)
             suits[suit].append(card)
 
-        # pylint made this look gross
         for suit, ranks_to_locs in locations.items():
             for rank, locs in ranks_to_locs.items():
                 if rank in (1, 5):
@@ -262,13 +261,14 @@ class PathFinder:
 
         return locations, suits
 
-    def _suitify(self, locations, *args):
+    # currently being phased out
+    def _suitify(self, locations):
         # minimal score of an All or Nothing agent that must eventually
         # play all cards and plays cards as the last copy of a playable
         # card is drawn
         score_lb = [[0] * 50 for _ in range(5)]
 
-        # TODO: implement pace checks (...b...a...b...c...)
+        # used to implement pace checks (...b...a...b...c...)
         # pace calculation for each suit
         for suit, ranks_to_locs in locations.items():
             index = suit - 1
@@ -287,22 +287,12 @@ class PathFinder:
         si = ShapeIdentifier([], [])
         paths = []
         for suit in orderings:
-            # TODO: check if this is correct?
-            # intentionally causing error
-            # print(locations[suit], orderings[suit])
             si.set_cards(orderings[suit], locations[suit])
-
-            result = si.identify()
-            # print(result)
-            paths.append(result)
+            paths.append(si.identify())
         return itertools.product(*paths)
 
     def _suit_pace_helper(self, scores):
         return scores
-
-    #TODO: implement
-    def _suit_checker(self):
-        return "hi"
 
     def _pathify(self, locs):
         path = [False] * 50
@@ -360,7 +350,6 @@ class PathFinder:
 
 class ShapeIdentifier:
     """docstring tbd"""
-    # pylint: disable=too-many-instance-attributes
     def __init__(self, cards, locations):
         self.cards = tuple(cards)
         self.counts = Counter(card.rank for card in self.cards)
@@ -397,10 +386,6 @@ class ShapeIdentifier:
             return [answer]
         locations = self.locations[rank]
         playable = self._playable[rank]
-        # print(rank)
-        # print(self._playable)
-        # print(locations)
-        # print(self.locations)
         attempt = locations[0]
         if attempt > playable:
             return self._helper(attempt, attempt)
@@ -409,9 +394,7 @@ class ShapeIdentifier:
         if attempt < playable:
             return self._helper(attempt, playable)
 
-        # print(attempt, playable, locations, "hi")
         attempt = bisect(locations, self._playable[rank]) - 1
-        # print(attempt)
         path1 = self._helper(locations[attempt], self._playable[rank])
         self._index = rank
         self._path = self._path[:rank - 1]
@@ -439,7 +422,6 @@ class ShapeIdentifier:
             index += 1
             is_playable[index] = True
 
-# TODO: fix
 class Card:
     """A card with suit and rank"""
     def __init__(self, suit_index, rank):
