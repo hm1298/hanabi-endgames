@@ -29,13 +29,35 @@ def lookup_hand_size(num_players):
     """
     if num_players in (2, 3):
         return 5
-    elif num_players == 6:
+    if num_players == 6:
         return 3
     return 4
 
 class Deck:
-    """An ordered list of cards"""
+    """A deck of cards for a Hanabi-like game
+
+    This class handles the creation and low-level analysis of a deck
+    of cards, with support for different variants and both seed-based
+    and arbitrary deck orders.
+
+    Attributes:
+        seed (str): A string representing the seed used for shuffling.
+            Plans to implement the Hanab Live shuffling algorithm (or
+            at least gain consistency with Rama's approach)
+        variant (Variant): The variant of the current game
+        deck (list): A list of Card objects
+    """
     def __init__(self, variant=None):
+        """Initializes the deck based on the specified variant.
+
+        When a variant is not chosen, the base suits of Hanab Live
+        are instead used ("No Variant"). The deck is populated with
+        cards but not ordered until a seed is chosen for shuffling
+        or a preselected order is provided with set_deck().
+
+        Args:
+            variant (str): name of a Hanab Live variant
+        """
         if variant is None:
             variant = lookup_variant("No Variant")
         elif isinstance(variant, str):
@@ -43,7 +65,7 @@ class Deck:
 
         self.seed = None
         self.variant = variant
-        self.deck = None  # to be overwritten
+        self.deck = None  # overwritten by _init_deck()
         self._init_deck(variant)
 
     def _init_deck(self, variant: Variant):
@@ -82,6 +104,19 @@ class Deck:
 
         self.deck = deck
 
+    def __repr__(self):
+        """Formats as a string."""
+        fmt = ""
+        for card in self.deck:
+            suit_index, rank = card.interpret()
+            suit = self.variant.suits[suit_index]
+            if suit.abbreviation is not None:
+                fmt += suit.abbreviation.lower()
+            else:
+                fmt += suit.id.lower()
+            fmt += str(rank) + " "
+        return fmt[:-1]
+
     def set_deck(self, deck):
         """Setter method for self.deck in case of unseeded deck.
 
@@ -114,7 +149,6 @@ class Deck:
             self.deck.append(Card(suit_index, rank))
         self._set_card_locations()
 
-    # TODO: use __repr__ instead? decide
     def print(self, cutoff=None):
         """Prints the deck.
 
@@ -145,6 +179,12 @@ class Deck:
         self._set_card_locations()
 
     def _set_card_locations(self):
+        """Assigns locations to each card in the deck.
+
+        Helper function that should be called any time the deck is
+        reordered and the attribute Card.location will be used at
+        any point.
+        """
         for location, card in enumerate(self.deck):
             card.set_location(location)
 
@@ -179,8 +219,23 @@ class Deck:
         return pf.check_for_infeasibility()
 
 class PathFinder:
-    """A multi-use solver for hanabi-like decks"""
+    """A multi-use solver for hanabi-like decks
+
+    Attributes:
+        deck (Deck): The deck of cards
+        num_players (int): Number of players in the game (used for pace)
+        hand_size (int): Number of cards each player can hold
+        capacity (int): Total hand size of all players
+    """
     def __init__(self, deck: Deck, num_players=2, hand_size=None):
+        """Initializes the pathfinder based on game type
+
+        Args:
+            deck (Deck): The deck of cards
+            num_players (int): Number of players
+            hand_size (int): Hand size for each player
+        """
+
         self.deck = deck
         self.num_players = num_players
         if hand_size is None:
@@ -242,6 +297,12 @@ class PathFinder:
         return self._check_for_pace_loss(path, self.num_players)
 
     def _split_into_suits(self):
+        """Splits the deck by suit into useful dictionaries.
+
+        Returns:
+        - locations (dict): Mapping of suit to rank to deck indices
+        - suits (dict): Mapping of suit to list of Card instances
+        """
         locations = {}  # suit to rank to deck indices
         suits = {}
         for loc, card in enumerate(self.deck.deck):
@@ -284,6 +345,11 @@ class PathFinder:
         return itertools.product(*paths)
 
     def _suitify2(self, locations, orderings):
+        """Generates possible paths through the deck.
+
+        Utilizes precomputation on suit shape. Finds path for each
+        suit then combines each suit path to get a full deck path.
+        """
         si = ShapeIdentifier([], [])
         paths = []
         for suit in orderings:
@@ -291,16 +357,15 @@ class PathFinder:
             paths.append(si.identify())
         return itertools.product(*paths)
 
-    def _suit_pace_helper(self, scores):
-        return scores
-
     def _pathify(self, locs):
+        """Converts a list of locations into a boolean path."""
         path = [False] * 50
         for loc in locs:
             path[loc] = True
         return path
 
     def _check_for_pace_loss(self, path, num_final_plays):
+        """Checks if the path yields a pace loss."""
         index = len(self.deck.deck) - 1
         curr = path[index]
         pace = num_final_plays
@@ -327,6 +392,7 @@ class PathFinder:
         return False
 
     def _check_for_capacity_loss(self, path, capacity):
+        """Checks if the path yields a hand capacity loss."""
         hand = set()
         stacks = [0, 0, 0, 0, 0]
         for index, curr in enumerate(path):
@@ -349,11 +415,26 @@ class PathFinder:
         return False
 
 class ShapeIdentifier:
-    """docstring tbd"""
+    """A suit-centric approach to deck infeasibility.
+
+    Attributes:
+        cards (tuple): tuple of Cards
+        counts (Counter): Amount of each type of card
+        locations (list): list of Card locations
+        valid_subsequences (dict): Memoization of prior suit orderings
+    """
     def __init__(self, cards, locations):
+        """Initializes based on suit ordering and location info.
+
+        Args:
+            cards (list): list of cards in order of appearance in deck
+            locations (list): list of list of possible deck locations
+        """
         self.cards = tuple(cards)
         self.counts = Counter(card.rank for card in self.cards)
         self.locations = locations
+
+        # TODO: implement valid_subsequences; currently no memoization
         self.valid_subsequences = {}
 
         # possible parameters:
@@ -376,7 +457,30 @@ class ShapeIdentifier:
         self._playable = [None, -1, None, None, None, None]
 
     def identify(self):
-        """docstring tbd"""
+        """Identifies playable paths.
+
+        This is the core method. Works recursively to return a list of
+        paths that satisfy certain extra constraints. Each path is a list
+        of 5 locations constituting a legal order to play the suit.
+
+        The key constraints are:
+            - No discards of playables. So any subsequence of self.cards
+            with pattern (...a...a...) only permits legal paths that use
+            the first location of a.
+            - No holding an earlier copy of a duplicate unplayable. So
+            any subsequence of self.cards with pattern (...b...b...a...)
+            where b must play before a, whose earliest location is shown,
+            only permits legal paths that use the second location of b.
+
+        Currently, no pace checks (and any would have to come after
+        memoization) so the exact values in self.locations are not very
+        important, just their ordering. We use self.locations instead of
+        indices in self.cards simply because we have the info on hand and
+        it is more accurate to the deck.
+
+        Returns:
+            list: possible paths for this suit ordering through the deck
+        """
         self._index += 1
         rank = self._index
         if rank > len(self.locations):
@@ -405,13 +509,19 @@ class ShapeIdentifier:
         return path1 + path2
 
     def _helper(self, location, playable):
+        """Helper method for ShapeIdentifier.identify().
+
+        Updates the local attributes based on how far identify()
+        is through checking possible paths on this deck.
+        """
         self._path.append(location)
         if self._index + 1 < len(self._playable):
             self._playable[self._index + 1] = playable
         return self.identify()
 
+    # TODO: what does this do? phase out?
     def _update_playables(self, index, in_hand, is_playable):
-        """Helper function for self.identify().
+        """Helper method for ShapeIdentifier.identify().
 
         Based on cards guaranteed to be held, updates each subsequent
         card to be playable. Mutates list is_playable.
@@ -423,14 +533,30 @@ class ShapeIdentifier:
             is_playable[index] = True
 
 class Card:
-    """A card with suit and rank"""
+    """A card with suit and rank
+
+    Attributes:
+        value (int): Encodes suit and rank
+        suit (int): The suit index
+        rank (int): The numerical rank of the card
+        location (int): The card's location in a deck
+    """
     def __init__(self, suit_index, rank):
+        """
+        Initializes the card with suit and rank.
+
+        Args:
+            suit_index (int): The suit index
+            rank (int): The card's rank. If card does not have a
+                numerical rank, then a number assignment must occur
+                elsewhere
+        """
         self.value = (suit_index << 31) | rank
         self.suit = suit_index
         self.rank = rank
         self.location = None
     def interpret(self):
-        """Returns (suit index, rank)."""
+        """Returns (suit index, rank)"""
         return self.suit, self.rank
     def set_location(self, new_value):
         """Setter function for Card.location"""
@@ -445,11 +571,12 @@ def create_bespoke_deck(deck, variant=None):
     return result
 
 if __name__ == "__main__":
-    # VAR = "No Variant"
-    # SEED = "p2v0scommendation-splintering-gondolas"
-    # DECK = Deck(VAR)
-    # DECK.shuffle(SEED)
-    # DECK.print()
+    VAR = "No Variant"
+    SEED = "p2v0scommendation-splintering-gondolas"
+    DECK = Deck(VAR)
+    DECK.shuffle(SEED)
+    DECK.print()
+    print(DECK)
     # print(DECK.check_for_infeasibility())
     FILE = "assets/rama_hard_decks.txt"
     D_NO = 8
