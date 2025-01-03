@@ -3,7 +3,6 @@
 from bisect import bisect
 import itertools
 import random
-from collections import Counter
 from endgames.game.variants import Variant, VARIANT_NAMES_DICT
 from endgames.game.io import read_printout
 
@@ -162,7 +161,6 @@ class Deck:
             cutoff = len(self.deck)
         print(" ".join([str(card.interpret()) for card in self.deck[:cutoff]]))
 
-    # TODO: implement Hanab Live shuffling method
     def shuffle(self, seed):
         """Shuffles deck according to a seed.
 
@@ -270,8 +268,8 @@ class PathFinder:
         Returns:
             bool: able to prove the deck is infeasible?
         """
-        suit_to_locs, suit_to_ordering = self._split_into_suits()
-        paths_through_deck = self._suitify2(suit_to_locs, suit_to_ordering)
+        _, suit_to_ordering = self._split_into_suits()
+        paths_through_deck = self._suitify2(suit_to_ordering)
         proved_infeasible = True
         for path in paths_through_deck:
             if isinstance(path[0], list):
@@ -344,17 +342,16 @@ class PathFinder:
             paths += ranks_to_locs.values()
         return itertools.product(*paths)
 
-    def _suitify2(self, locations, orderings):
+    def _suitify2(self, orderings):
         """Generates possible paths through the deck.
 
         Utilizes precomputation on suit shape. Finds path for each
         suit then combines each suit path to get a full deck path.
         """
-        si = ShapeIdentifier([], [])
+        si = ShapeIdentifier()
         paths = []
         for suit in orderings:
-            si.set_cards(orderings[suit], locations[suit])
-            paths.append(si.identify())
+            paths.append(si.identify(orderings[suit]))
         return itertools.product(*paths)
 
     def _pathify(self, locs):
@@ -414,6 +411,49 @@ class PathFinder:
                     return True
         return False
 
+class ShapeOptions:
+    """Options for ShapeIdentifier."""
+    def __init__(self, bdrs=None, hand_capacity=10, playables_play=True):
+        self.bdrs = bdrs
+        self.hand_capacity = hand_capacity
+        self.check_for_hand_dist = None
+        self.playables_play = playables_play
+        self.sh_ranks = None
+
+        if bdrs is None:
+            self.bdrs = set()
+        if hand_capacity is None:
+            self.check_for_hand_dist = False
+        else:
+            self.check_for_hand_dist = True
+
+    def is_bdr(self, card):
+        """Determines if card should be a BDR."""
+        return card.rank in self.bdrs
+
+    def add_bdr(self, card):
+        """Adds a bdr to self.bdrs."""
+        self.bdrs.add(card.rank)
+
+    def hand_dist(self, cards):
+        """Sets, typecasts, and returns self.sh_ranks."""
+        self.sh_ranks = tuple(self.get_hand_dist_concerns(cards))
+        return self.sh_ranks
+
+    def get_hand_dist_concerns(self, cards):
+        """Returns ranks of cards with hand dist concern."""
+        result = []
+        if not self.check_for_hand_dist:
+            return result
+        counts = [None, 0, 0, 0, 0, 0]
+        for card in cards:
+            if card.location >= self.hand_capacity:
+                return result
+            counts[card.rank] += 1
+            if counts[card.rank] == 2:
+                result.append(card.rank)
+        return result
+
 class ShapeIdentifier:
     """A suit-centric approach to deck infeasibility.
 
@@ -423,40 +463,65 @@ class ShapeIdentifier:
         locations (list): list of Card locations
         valid_subsequences (dict): Memoization of prior suit orderings
     """
-    def __init__(self, cards, locations):
+    def __init__(self, options: ShapeOptions = None):
         """Initializes based on suit ordering and location info.
 
         Args:
             cards (list): list of cards in order of appearance in deck
             locations (list): list of list of possible deck locations
         """
-        self.cards = tuple(cards)
-        self.counts = Counter(card.rank for card in self.cards)
-        self.locations = locations
-
-        # TODO: implement valid_subsequences; currently no memoization
+        if options is None:
+            options = ShapeOptions()
+        self.options = options
         self.valid_subsequences = {}
 
-        # possible parameters:
-        # self.first_one_plays = first_one_plays or playables_play
-        # self.playables_play = playables_play
-        # self.last_dupe_saved = last_dupe_saved
+        self._locations = None
+        self._index = None
+        self._path = None
+        self._playable = None
+        self._set_protected_attrs()
 
-        self._index = 1
-        self._path = []
-        self._playable = [None, -1, None, None, None, None]
-
-    def set_cards(self, cards, locations):
-        """Setter function for cards."""
-        self.cards = tuple(cards)
-        self.counts = Counter(card.rank for card in self.cards)
-        self.locations = locations
-
+    def _set_protected_attrs(self):
+        """Setter function for protected attributes."""
+        self._locations = [None, [], [], [], [], []]
         self._index = 0
         self._path = []
         self._playable = [None, -1, None, None, None, None]
 
-    def identify(self):
+    def get_shape(self, cards):
+        """Gets shape of cards. Sets self._locations."""
+        self._set_protected_attrs()
+        ordering = []
+        is_first = [None, True, True, True, True, True]
+        is_played = [True, False, False, False, False, False]
+        for card in cards:
+            if is_first[card.rank] and self.options.is_bdr(card):
+                is_first[card.rank] = False
+                continue
+            if is_played[card.rank]:
+                continue
+            if is_played[card.rank - 1]:
+                is_played[card.rank] = True
+            ordering.append(card.rank)
+            is_first[card.rank] = False
+            self._locations[card.rank].append(card.location)
+        ordering = tuple(ordering)
+        # print(self._locations)
+        # print(shape)
+        dist = self.options.hand_dist(cards)
+        return ordering, dist
+
+    def identify(self, cards):
+        """Checks if shape has been identified.
+
+        It if hasn't, identifies it and adds to memory.
+        """
+        shape = self.get_shape(cards)
+        if shape not in self.valid_subsequences:
+            self.valid_subsequences[shape] = self.identify_recurse()
+        return self.valid_subsequences[shape]
+
+    def identify_recurse(self):
         """Identifies playable paths.
 
         This is the core method. Works recursively to return a list of
@@ -473,8 +538,8 @@ class ShapeIdentifier:
             only permits legal paths that use the second location of b.
 
         Currently, no pace checks (and any would have to come after
-        memoization) so the exact values in self.locations are not very
-        important, just their ordering. We use self.locations instead of
+        memoization) so the exact values in self._locations are not very
+        important, just their ordering. We use self._locations instead of
         indices in self.cards simply because we have the info on hand and
         it is more accurate to the deck.
 
@@ -483,13 +548,22 @@ class ShapeIdentifier:
         """
         self._index += 1
         rank = self._index
-        if rank > len(self.locations):
+        if rank == len(self._locations):
             answer = self._path
             self._index -= 1
             self._path = self._path[:-1]
             return [answer]
-        locations = self.locations[rank]
+        locations = self._locations[rank]
         playable = self._playable[rank]
+
+        if rank in self.options.sh_ranks:
+            for loc in locations:
+                self._helper(loc, max(loc, playable))
+                self._index = rank
+                self._path = self._path[:rank - 1]
+                self._playable = self._playable[:rank + 1] + \
+                    [False] * (len(self._playable) - (rank + 1))
+
         attempt = locations[0]
         if attempt > playable:
             return self._helper(attempt, attempt)
@@ -517,20 +591,7 @@ class ShapeIdentifier:
         self._path.append(location)
         if self._index + 1 < len(self._playable):
             self._playable[self._index + 1] = playable
-        return self.identify()
-
-    # TODO: what does this do? phase out?
-    def _update_playables(self, index, in_hand, is_playable):
-        """Helper method for ShapeIdentifier.identify().
-
-        Based on cards guaranteed to be held, updates each subsequent
-        card to be playable. Mutates list is_playable.
-        """
-        index += 1
-        is_playable[index] = True
-        while in_hand[index] and index <= 5:
-            index += 1
-            is_playable[index] = True
+        return self.identify_recurse()
 
 class Card:
     """A card with suit and rank
