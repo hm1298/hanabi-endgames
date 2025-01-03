@@ -70,6 +70,8 @@ def read_printout(file_path):
                 line = line.strip()
                 line = line.strip("[]")
                 deck = [el.strip() for el in line.split(",")]
+                if len(deck) == 1:
+                    deck = [el.strip() for el in deck[0].split()]
                 decks.append(deck)
         return decks
     except FileNotFoundError as e:

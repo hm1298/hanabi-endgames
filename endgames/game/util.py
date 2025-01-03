@@ -76,30 +76,29 @@ class Deck:
         deck = []
         for suit_index, suit in enumerate(variant.suits):
             for rank in variant.clue_ranks:
-                card = Card(suit_index, rank)
                 # intentionally do not set card location
                 # only set card location when creating deck ordering
 
                 if variant.stack_size == 4 and rank == 5:
                     continue
-                deck.append(card)
+                deck.append(Card(suit_index, rank))
                 if suit.one_of_each:
                     continue
                 if variant.sudoku:
-                    deck.append(card)
+                    deck.append(Card(suit_index, rank))
                 elif rank == 1:
                     if variant.up_or_down or suit.reversed:
                         continue
-                    deck.append(card)
-                    deck.append(card)
+                    deck.append(Card(suit_index, rank))
+                    deck.append(Card(suit_index, rank))
                 elif rank == variant.critical_rank:
                     continue
                 elif rank == 5:
                     if suit.reversed:
-                        deck.append(card)
-                        deck.append(card)
+                        deck.append(Card(suit_index, rank))
+                        deck.append(Card(suit_index, rank))
                 else:
-                    deck.append(card)
+                    deck.append(Card(suit_index, rank))
 
         self.deck = deck
 
@@ -171,9 +170,10 @@ class Deck:
         Returns:
             list: a copy of deck sorted by seed
         """
+        local_random = random.Random()
         self.seed = seed
-        random.seed(seed)
-        random.shuffle(self.deck)
+        local_random.seed(seed)
+        local_random.shuffle(self.deck)
         self._set_card_locations()
 
     def _set_card_locations(self):
@@ -186,7 +186,7 @@ class Deck:
         for location, card in enumerate(self.deck):
             card.set_location(location)
 
-    def check_for_infeasibility(self):
+    def check_for_infeasibility(self, si=None):
         """Checks if the deck is impossible to win.
 
         Returning True indicates that the deck is provably infeasible,
@@ -213,7 +213,9 @@ class Deck:
         Returns:
             bool: able to prove the deck is infeasible?
         """
-        pf = PathFinder(self, 2, 5)
+        if si is None:
+            si = ShapeIdentifier()
+        pf = PathFinder(self, si, 2, 5)
         return pf.check_for_infeasibility()
 
 class PathFinder:
@@ -225,7 +227,7 @@ class PathFinder:
         hand_size (int): Number of cards each player can hold
         capacity (int): Total hand size of all players
     """
-    def __init__(self, deck: Deck, num_players=2, hand_size=None):
+    def __init__(self, deck: Deck, si, num_players=2, hand_size=None):
         """Initializes the pathfinder based on game type
 
         Args:
@@ -235,6 +237,7 @@ class PathFinder:
         """
 
         self.deck = deck
+        self.si = si
         self.num_players = num_players
         if hand_size is None:
             hand_size = lookup_hand_size(num_players)
@@ -272,7 +275,7 @@ class PathFinder:
         paths_through_deck = self._suitify2(suit_to_ordering)
         proved_infeasible = True
         for path in paths_through_deck:
-            if isinstance(path[0], list):
+            if isinstance(path[0], tuple):
                 path = itertools.chain(*path)
             path = self._pathify(path)
             if self._check_for_capacity_loss(path, self.capacity):
@@ -348,10 +351,9 @@ class PathFinder:
         Utilizes precomputation on suit shape. Finds path for each
         suit then combines each suit path to get a full deck path.
         """
-        si = ShapeIdentifier()
         paths = []
         for suit in orderings:
-            paths.append(si.identify(orderings[suit]))
+            paths.append(self.si.identify(orderings[suit]))
         return itertools.product(*paths)
 
     def _pathify(self, locs):
@@ -413,7 +415,7 @@ class PathFinder:
 
 class ShapeOptions:
     """Options for ShapeIdentifier."""
-    def __init__(self, bdrs=None, hand_capacity=10, playables_play=True):
+    def __init__(self, bdrs=None, hand_capacity=None, playables_play=True):
         self.bdrs = bdrs
         self.hand_capacity = hand_capacity
         self.check_for_hand_dist = None
@@ -516,10 +518,17 @@ class ShapeIdentifier:
 
         It if hasn't, identifies it and adds to memory.
         """
-        shape = self.get_shape(cards)
-        if shape not in self.valid_subsequences:
-            self.valid_subsequences[shape] = self.identify_recurse()
-        return self.valid_subsequences[shape]
+        self.get_shape(cards)
+        # TODO: bugfix, currently the locations stored in
+        # self.valid_subsequences are ONLY accurate for the original
+        # list of cards used to populate its shape's entry. Need to
+        # use indices into shape[0] rather than the internal card
+        # locations. However, this requires passing shape[0] to
+        # identify_recurse() in some way or other, since currently it
+        # only has access to the class attribute _locations.
+        # if shape not in self.valid_subsequences:
+            # self.valid_subsequences[shape] = tuple(self.identify_recurse())
+        return tuple(self.identify_recurse())
 
     def identify_recurse(self):
         """Identifies playable paths.
@@ -549,7 +558,7 @@ class ShapeIdentifier:
         self._index += 1
         rank = self._index
         if rank == len(self._locations):
-            answer = self._path
+            answer = tuple(self._path)
             self._index -= 1
             self._path = self._path[:-1]
             return [answer]
@@ -557,12 +566,14 @@ class ShapeIdentifier:
         playable = self._playable[rank]
 
         if rank in self.options.sh_ranks:
+            paths = []
             for loc in locations:
-                self._helper(loc, max(loc, playable))
+                paths += self._helper(loc, max(loc, playable))
                 self._index = rank
                 self._path = self._path[:rank - 1]
                 self._playable = self._playable[:rank + 1] + \
                     [False] * (len(self._playable) - (rank + 1))
+            return paths
 
         attempt = locations[0]
         if attempt > playable:
