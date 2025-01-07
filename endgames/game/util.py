@@ -273,8 +273,21 @@ class PathFinder:
         """
         _, suit_to_ordering = self._split_into_suits()
         paths_through_deck = self._suitify2(suit_to_ordering)
+        inf, paths = self.check_for_1p_inf(paths_through_deck)
+        if len(paths) == 0:
+            return inf
+        print(len(paths))
+        return all(self._check_for_dist_loss(path) for path in paths)
+
+    def check_for_1p_inf(self, paths):
+        """Checks for infeasibility in the 1-player case.
+
+        Returns True/False if the infinite clue 2p case can be decided
+        here, else returns pace 0 paths for a hand distribution check.
+        """
         proved_infeasible = True
-        for path in paths_through_deck:
+        dist_paths = []
+        for path in paths:
             if isinstance(path[0], tuple):
                 path = itertools.chain(*path)
             path = self._pathify(path)
@@ -282,9 +295,11 @@ class PathFinder:
                 continue
             if self._check_for_pace_loss(path, self.num_players):
                 continue
-            proved_infeasible = False
-            break
-        return proved_infeasible
+            if not self._check_for_pace_loss(path, 1):
+                proved_infeasible = False
+                break
+            dist_paths.append(path)
+        return proved_infeasible, dist_paths
 
     def check_for_pace_loss(self):
         """Checks for pace loss with infinite hand size."""
@@ -412,6 +427,39 @@ class PathFinder:
                 if len(hand) == capacity:
                     return True
         return False
+
+    # TODO: Finish implementation
+    def _check_for_dist_loss(self, path):
+        """Checks if the path yields a hand distribution loss."""
+        locations = self._get_pace_breakpoints(path)
+        # print(locations)
+        return False
+
+    def _get_pace_breakpoints(self, path, value=0):
+        """Returns locations at which pace must reach value."""
+        index = len(self.deck.deck) - 1
+        curr = path[index]
+        pace = self.num_players
+        stacks = [0, 0, 0, 0, 0]
+        locations = []
+        # checks for BDR loss
+        if curr:
+            card = self.deck.deck[index]
+            suit, rank = card.interpret()
+            suit -= 1  # 0-indexing
+            stacks[suit] = max(stacks[suit], 6 - rank)  # should be 1
+        while pace < 25:  # 25 is max score
+            pace += 1
+            index -= 1
+            curr = path[index]
+            if curr:
+                card = self.deck.deck[index]
+                suit, rank = card.interpret()
+                suit -= 1  # 0-indexing
+                stacks[suit] = max(stacks[suit], 6 - rank)
+            if sum(stacks) == pace + value:
+                locations.append(index)
+        return locations
 
 class ShapeOptions:
     """Options for ShapeIdentifier."""
