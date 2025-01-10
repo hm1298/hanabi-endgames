@@ -275,9 +275,9 @@ class PathFinder:
         paths_through_deck = self._suitify2(suit_to_ordering)
         inf, paths = self.check_for_1p_inf(paths_through_deck)
         if len(paths) == 0:
-            return inf
-        print(len(paths))
-        return all(self._check_for_dist_loss(path) for path in paths)
+            return inf, False
+        # print(len(paths))
+        return all(self._check_for_dist_loss(path) for path in paths), True
 
     def check_for_1p_inf(self, paths):
         """Checks for infeasibility in the 1-player case.
@@ -286,6 +286,7 @@ class PathFinder:
         here, else returns pace 0 paths for a hand distribution check.
         """
         proved_infeasible = True
+        found_pace_one = False
         dist_paths = []
         for path in paths:
             if isinstance(path[0], tuple):
@@ -296,9 +297,12 @@ class PathFinder:
             if self._check_for_pace_loss(path, self.num_players):
                 continue
             if not self._check_for_pace_loss(path, 1):
+                found_pace_one = True
                 proved_infeasible = False
                 break
             dist_paths.append(path)
+        if found_pace_one:
+            dist_paths = []
         return proved_infeasible, dist_paths
 
     def check_for_pace_loss(self):
@@ -428,12 +432,12 @@ class PathFinder:
                     return True
         return False
 
-    # TODO: Finish implementation
     def _check_for_dist_loss(self, path):
         """Checks if the path yields a hand distribution loss."""
         locations = self._get_pace_breakpoints(path)
-        # print(locations)
-        return False
+        connectors, stacks = self._get_breakpoint_connectors(path, locations)
+        # print("Connectors and stacks:", connectors, stacks)
+        return self._solve_breakpoint(path, connectors, stacks)
 
     def _get_pace_breakpoints(self, path, value=0):
         """Returns locations at which pace must reach value."""
@@ -460,6 +464,83 @@ class PathFinder:
             if sum(stacks) == pace + value:
                 locations.append(index)
         return locations
+
+    def _get_breakpoint_connectors(self, path, locations):
+        locs_to_entries = {loc: [] for loc in locations}
+        locs_to_stacks = {loc: [] for loc in locations}
+        hand = set()
+        stacks = [0, 0, 0, 0, 0]
+        prev, reached_pace_zero = (0, 0, 0, 0, 0), False
+        for index, curr in enumerate(path):
+            if not curr:
+                continue
+            card = self.deck.deck[index]
+            suit, rank = card.interpret()
+            suit -= 1  # 0-indexing
+
+            if index == locations[-1]:
+                locations.pop()
+                curr = tuple(stacks)
+                locs_to_stacks[index] = curr
+                if reached_pace_zero:
+                    diff = tuple(a - b for a, b in zip(curr, prev))
+                    for suit_index, val in enumerate(diff):
+                        if val > 0:
+                            connector = (suit_index + 1, curr[suit_index])
+                            locs_to_entries[index].append(connector)
+                else:
+                    locs_to_entries[index] = "anything"
+                if len(locations) == 0:
+                    break
+                reached_pace_zero = True
+                prev = curr
+
+            if stacks[suit] == rank - 1:  # i.e., playable
+                newly_playable = card.value + 1
+                stacks[suit] += 1
+                while newly_playable in hand:
+                    hand.remove(newly_playable)
+                    newly_playable += 1
+                    stacks[suit] += 1
+            else:
+                hand.add(card.value)
+        return locs_to_entries, locs_to_stacks
+
+    def _solve_breakpoint(self, path, loc_to_cnct, loc_to_stack):
+        hand1 = [card.interpret() for index, card in enumerate(self.deck.deck[0:5]) if path[index]]
+        hand2 = [card.interpret() for index, card in enumerate(self.deck.deck[5:10]) if path[index + 5]]
+        for location, connector in loc_to_cnct.items():
+            stack = loc_to_stack[location]
+            # first consider each player holds a 5 to last turn
+            suits = [index for index, value in enumerate(stack) if value < 5]
+            valid_assigns = []
+            for i in suits:
+                for j in suits:
+                    if i == j:
+                        continue
+                    attempt = ((i + 1, 5), (j + 1, 5))
+                    if self._assign_helper(attempt, hand1, hand2):
+                        continue
+                    valid_assigns.append(attempt)
+
+            # next consider each player holds a matching 4 & 5 to last turn
+            suits = [index for index, value in enumerate(stack) if value < 4]
+            for i in suits:
+                attempt = ((i + 1, 4), (i + 1, 5))
+                if self._assign_helper(attempt, hand1, hand2):
+                    continue
+                valid_assigns.append(attempt)
+            # print("Possible assignments:", valid_assigns)
+
+            # now we want to link it to who draws to enter this breakpoint
+            # and connect it to the next breakpoint if necessary
+            # print("This might be good enough as is to catch decks impossible due to necessary 45 in the same hand.")
+            if len(valid_assigns) == 0:
+                return True
+        return len(valid_assigns) == 0
+
+    def _assign_helper(self, t, h1, h2):
+        return (t[0] in h1 and t[1] in h1) or (t[0] in h2 and t[1] in h2)
 
 class ShapeOptions:
     """Options for ShapeIdentifier."""
