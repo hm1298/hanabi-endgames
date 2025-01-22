@@ -4,9 +4,11 @@ import pytest
 from endgames.game import io, util
 
 TESTS = io.read_printout("assets/rama_old_decks.txt") + \
-    io.read_printout("assets/rama_hard_decks.txt")
+    io.read_printout("assets/rama_hard_decks.txt") + \
+    io.read_printout("assets/hand_dist_decks.txt")
 ANSWERS = io.read_printout("assets/rama_old_decks_ans.txt") + \
-    io.read_printout("assets/rama_hard_decks_ans.txt")
+    io.read_printout("assets/rama_hard_decks_ans.txt") + \
+    io.read_printout("assets/hand_dist_decks_ans.txt")
 
 @pytest.mark.parametrize("raw_deck, answer", list(zip(TESTS, ANSWERS)))
 def test_study(raw_deck, answer):

@@ -143,7 +143,7 @@ class Deck:
                 if word.lower() == attempt.name.lower():
                     suit = attempt.name
                     break
-            suit_index = self.variant.suit_names.index(suit) + 1  # 1-indexed
+            suit_index = self.variant.suit_names.index(suit)
             self.deck.append(Card(suit_index, rank))
         self._set_card_locations()
 
@@ -394,7 +394,6 @@ class PathFinder:
             if card.interpret()[1] != 5:
                 return True
             suit, rank = card.interpret()
-            suit -= 1  # 0-indexing
             stacks[suit] = max(stacks[suit], 6 - rank)  # should be 1
         while pace < 25:  # 25 is max score
             pace += 1
@@ -403,7 +402,6 @@ class PathFinder:
             if curr:
                 card = self.deck.deck[index]
                 suit, rank = card.interpret()
-                suit -= 1  # 0-indexing
                 stacks[suit] = max(stacks[suit], 6 - rank)
             if sum(stacks) > pace:
                 return True
@@ -418,7 +416,6 @@ class PathFinder:
                 continue
             card = self.deck.deck[index]
             suit, rank = card.interpret()
-            suit -= 1  # 0-indexing
             if stacks[suit] == rank - 1:  # i.e., playable
                 newly_playable = card.value + 1
                 stacks[suit] += 1
@@ -450,7 +447,6 @@ class PathFinder:
         if curr:
             card = self.deck.deck[index]
             suit, rank = card.interpret()
-            suit -= 1  # 0-indexing
             stacks[suit] = max(stacks[suit], 6 - rank)  # should be 1
         while pace < 25:  # 25 is max score
             pace += 1
@@ -459,7 +455,6 @@ class PathFinder:
             if curr:
                 card = self.deck.deck[index]
                 suit, rank = card.interpret()
-                suit -= 1  # 0-indexing
                 stacks[suit] = max(stacks[suit], 6 - rank)
             if sum(stacks) == pace + value:
                 locations.append(index)
@@ -476,7 +471,6 @@ class PathFinder:
                 continue
             card = self.deck.deck[index]
             suit, rank = card.interpret()
-            suit -= 1  # 0-indexing
 
             if index == locations[-1]:
                 locations.pop()
@@ -507,36 +501,134 @@ class PathFinder:
         return locs_to_entries, locs_to_stacks
 
     def _solve_breakpoint(self, path, loc_to_cnct, loc_to_stack):
+        """Basic algorithm is as follows:
+
+        1. Partition cards into a few categories:
+            (i) Must be held in hand 1.
+            (ii) Must be held in hand 2.
+            (iii) Could be held in either hand before pace 0.
+            (iv) Drawn at pace 0.
+        1b. For now, all cards drawn after starting hands and before
+        pace 0 are assumed to be of type (iii).
+        2. Separate as unique if the only possible 3-card ending is
+        3-4-5 of the same suit. This is the only type of ending where
+        the hand of the third to last play matters (with high clues).
+        3. Use last pace 0 breakpoint to determine all possible 2-card
+        endings. With the exception listed in #2, these are the only
+        cards that matter for the hand distribution problem.
+        3b. Return feasible if such a pair has both entries in (iii).
+        4. For each unplayed card (at first pace 0 breakpoint), find
+        the earliest turn and the latest turn it can play. Use this to
+        determine which cards of type (iv) could be held in each hand.
+        5. Iterate through the pairs from #3 to determine if there is
+        a hand distribution that works, according to #4. Use a greedy
+        approach (suit of earlier card plays > suit of later card
+        plays > suits of other cards play) to determine if possible.
+        For unique decks, go back and track the hand of the 3 if the
+        4-5 pair is correctly distributed.
+
+        Args:
+            path (_type_): _description_
+            loc_to_cnct (_type_): _description_
+            loc_to_stack (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        # ===== STEP ONE =====
         hand1 = [card.interpret() for index, card in enumerate(self.deck.deck[0:5]) if path[index]]
         hand2 = [card.interpret() for index, card in enumerate(self.deck.deck[5:10]) if path[index + 5]]
-        for location, connector in loc_to_cnct.items():
-            stack = loc_to_stack[location]
-            # first consider each player holds a 5 to last turn
-            suits = [index for index, value in enumerate(stack) if value < 5]
-            valid_assigns = []
-            for i in suits:
-                for j in suits:
-                    if i == j:
-                        continue
-                    attempt = ((i + 1, 5), (j + 1, 5))
-                    if self._assign_helper(attempt, hand1, hand2):
-                        continue
-                    valid_assigns.append(attempt)
+        pace0 = [card.interpret() for index, card in enumerate(self.deck.deck[min(loc_to_cnct):]) if path[index + min(loc_to_cnct)]]
+        # print(pace0, "in", [card.interpret() if path[index] else None for index, card in enumerate(self.deck.deck)])
 
-            # next consider each player holds a matching 4 & 5 to last turn
-            suits = [index for index, value in enumerate(stack) if value < 4]
-            for i in suits:
-                attempt = ((i + 1, 4), (i + 1, 5))
+
+        # ===== STEP TWO =====
+        # Checks if final pace 0 breakpoint is single suited
+        # If single suited, then only a 3-4-5 ending is possible
+        # So it becomes necessary to track who holds the 3
+        unique = False
+        if sum(rank != 5 for rank in loc_to_stack[max(loc_to_cnct)]) == 1:
+            unique = True
+
+
+        # ===== STEP THREE =====
+        # Use last pace 0 breakpoint to find all possible endings
+        location = max(loc_to_cnct)
+        stacks = loc_to_stack[location]
+
+        # First, consider each player holds a 5 on last turn
+        suits = [index for index, value in enumerate(stacks) if value < 5]
+        valid_assigns = []
+        for i in suits:
+            for j in suits:
+                if i == j:
+                    continue
+                attempt = ((i, 5), (j, 5))
+                # the following check could be retooled as a broader
+                # "pre pace 0" check in the future. for now, it only
+                # considers assignments impossible if the starting
+                # hand cards prevent this ending assignment.
                 if self._assign_helper(attempt, hand1, hand2):
                     continue
                 valid_assigns.append(attempt)
-            # print("Possible assignments:", valid_assigns)
 
-            # now we want to link it to who draws to enter this breakpoint
-            # and connect it to the next breakpoint if necessary
-            # print("This might be good enough as is to catch decks impossible due to necessary 45 in the same hand.")
-            if len(valid_assigns) == 0:
-                return True
+        # Next, consider each player holds a matching 4 & 5 on last turn
+        suits = [index for index, value in enumerate(stacks) if value < 4]
+        for i in suits:
+            attempt = ((i, 4), (i, 5))
+            if self._assign_helper(attempt, hand1, hand2):
+                continue
+            valid_assigns.append(attempt)
+
+
+        # Returns early (feasible) if there exists a pre pace 0 assignment
+        for assign in valid_assigns:
+            if assign[0] not in pace0 and assign[1] not in pace0:
+                if unique:
+                    continue
+                return False
+
+
+        # ===== STEP FOUR =====
+        turns_playable = [None] * 26
+        for suit, rank in pace0:
+            index = 5 * suit + rank
+            turns_playable[index] = []
+
+        # Starting from the first pace 0 breakpoint, find earliest turns
+        location = min(loc_to_cnct)
+        stacks = loc_to_stack[location]
+        hand = set()
+        for i in range(location):  # recover the hand
+            if path[i]:
+                card = self.deck.deck[i]
+                suit, rank = card.interpret()
+                if stacks[suit] > rank:
+                    hand.add(card.value)
+
+        for draw_loc in range(location, len(self.deck.deck)):
+            for suit, rank in enumerate(stacks):
+                # clean up this value vs index stuff. also, where's Card?
+                value, index = suit << 31 | rank, 5 * suit + rank
+                if value in hand:
+                    hand.remove(value)
+                    stacks[suit] += 1
+                    turns_playable[index].append(draw_loc)
+            if path[draw_loc]:
+                hand.add(self.deck.deck[draw_loc].value)
+
+        # TODO: find latest turns. turns_playable currently a bunch of [x]'s
+        # immediate implementation idea~ greedy approach each suit in turn
+
+
+        # ===== STEP FIVE =====
+        # TODO
+
+
+        if len(valid_assigns) == 0:
+            return True
+        if unique:
+            return False
         return len(valid_assigns) == 0
 
     def _assign_helper(self, t, h1, h2):
@@ -755,6 +847,8 @@ class Card:
         self.value = (suit_index << 31) | rank
         self.suit = suit_index
         self.rank = rank
+        assert self.suit != 5  # fixed an indexing error
+        self.index = 5 * self.suit + self.rank
         self.location = None
     def interpret(self):
         """Returns (suit index, rank)"""
