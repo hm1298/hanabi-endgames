@@ -276,7 +276,8 @@ class PathFinder:
         inf, paths = self.check_for_1p_inf(paths_through_deck)
         if len(paths) == 0:
             return inf, False
-        # print(len(paths))
+        # might want to ensure _check_for_dist_loss() always returns a bool
+        # OR fold out this all(...) expression for robustness/debugging
         return all(self._check_for_dist_loss(path) for path in paths), True
 
     def check_for_1p_inf(self, paths):
@@ -535,26 +536,28 @@ class PathFinder:
         Returns:
             _type_: _description_
         """
-        # ===== STEP ONE =====
+        # region ===== STEP ONE =====
         hand1 = [card.interpret() for index, card in enumerate(self.deck.deck[0:5]) if path[index]]
         hand2 = [card.interpret() for index, card in enumerate(self.deck.deck[5:10]) if path[index + 5]]
         pace0 = [card.interpret() for index, card in enumerate(self.deck.deck[min(loc_to_cnct):]) if path[index + min(loc_to_cnct)]]
         # print(pace0, "in", [card.interpret() if path[index] else None for index, card in enumerate(self.deck.deck)])
+        # endregion
 
 
-        # ===== STEP TWO =====
+        # region ===== STEP TWO =====
         # Checks if final pace 0 breakpoint is single suited
         # If single suited, then only a 3-4-5 ending is possible
         # So it becomes necessary to track who holds the 3
         unique = False
         if sum(rank != 5 for rank in loc_to_stack[max(loc_to_cnct)]) == 1:
             unique = True
+        # endregion
 
 
-        # ===== STEP THREE =====
+        # region ===== STEP THREE =====
         # Use last pace 0 breakpoint to find all possible endings
         location = max(loc_to_cnct)
-        stacks = loc_to_stack[location]
+        stacks = loc_to_stack[location]  # access only, no modifying
 
         # First, consider each player holds a 5 on last turn
         suits = [index for index, value in enumerate(stacks) if value < 5]
@@ -580,6 +583,9 @@ class PathFinder:
                 continue
             valid_assigns.append(attempt)
 
+        # Returns early (infeasible) if there are no valid assignments
+        if len(valid_assigns) == 0:
+            return True
 
         # Returns early (feasible) if there exists a pre pace 0 assignment
         for assign in valid_assigns:
@@ -587,56 +593,175 @@ class PathFinder:
                 if unique:
                     continue
                 return False
+        # endregion
 
 
-        # ===== STEP FOUR =====
+        # region ===== STEP FOUR =====
         turns_playable = [None] * 26
-        for suit, rank in pace0:
-            index = 5 * suit + rank
-            turns_playable[index] = []
+        location = min(loc_to_cnct)
+        stacks = list(loc_to_stack[location])
+        for suit in range(5):
+            for rank in range(stacks[suit] + 1, 6):
+                index = 5 * suit + rank
+                turns_playable[index] = []
+        hand = set()
+        for i in range(location + 1):  # recover the hand
+            if not path[i]:
+                continue
+            card = self.deck.deck[i]
+            suit, rank = card.interpret()
+            if rank > stacks[suit]:
+                hand.add(card.value)
+        _temp_hand = set(hand)
+
 
         # Starting from the first pace 0 breakpoint, find earliest turns
-        location = min(loc_to_cnct)
-        stacks = loc_to_stack[location]
-        hand = set()
-        for i in range(location):  # recover the hand
-            if path[i]:
-                card = self.deck.deck[i]
-                suit, rank = card.interpret()
-                if stacks[suit] > rank:
-                    hand.add(card.value)
-
-        for draw_loc in range(location, len(self.deck.deck)):
+        for draw_loc in range(location + 1, len(path) + 2):
             for suit, rank in enumerate(stacks):
+                rank += 1
                 # clean up this value vs index stuff. also, where's Card?
                 value, index = suit << 31 | rank, 5 * suit + rank
                 if value in hand:
                     hand.remove(value)
                     stacks[suit] += 1
                     turns_playable[index].append(draw_loc)
-            if path[draw_loc]:
+            if draw_loc < len(path) and path[draw_loc]:
                 hand.add(self.deck.deck[draw_loc].value)
 
-        # TODO: find latest turns. turns_playable currently a bunch of [x]'s
-        # immediate implementation idea~ greedy approach each suit in turn
+        # Now finds latest turns greedily for cards of each suit in turn
+        for chosen_suit in range(5):
+            stacks = list(loc_to_stack[location])
+            hand = set(_temp_hand)
+            for draw_loc in range(location + 1, len(path) + 2):
+                found, value, index = False, None, None
+                for suit, rank in enumerate(stacks):
+                    rank += 1
+                    if suit == chosen_suit:
+                        continue
+                    value, index = suit << 31 | rank, 5 * suit + rank
+                    if value in hand:
+                        found = True
+                        break
+                if not found:
+                    suit, rank = chosen_suit, stacks[chosen_suit] + 1
+                    value, index = suit << 31 | rank, 5 * suit + rank
+                    # could add check to ensure this card is playable
+                    # but all paths passed to _solve_breakpoint() have
+                    # satisfied pace checks already, meaning SOME card
+                    # is playable (so this one, the last option, is)
+                    turns_playable[index].append(draw_loc)
+                hand.remove(value)
+                stacks[suit] += 1
+                if draw_loc < len(path) and path[draw_loc]:
+                    hand.add(self.deck.deck[draw_loc].value)
+
+        # data validation, i.e. built-in testing
+        for index, entry in enumerate(turns_playable):
+            try:
+                assert(entry is None or len(entry) == 2)
+                assert(entry is None or entry[1] >= entry[0])
+            except AssertionError as e:
+                print(index, entry, stacks)
+                raise e
+        # endregion
 
 
-        # ===== STEP FIVE =====
-        # TODO
+        # region ===== STEP FIVE =====
+        precursors = [None] * 26
+        successors = [[] for _ in range(26)]
+        stacks = loc_to_stack[location]  # access only, no modifying
+        for deck_loc, card in enumerate(self.deck.deck):
+            if deck_loc < location:
+                continue
+            if not path[deck_loc]:
+                continue
+            precursors[card.index] = []
+            for pre_index, interval in enumerate(turns_playable):
+                if interval is None:
+                    continue
+                if interval[0] <= deck_loc <= interval[1]:
+                    precursors[card.index].append(pre_index)
+                    successors[pre_index].append(card.index)
+
+        # checks if the pace 0 playable can possibly lead to a card
+        # that can be played on the last turn
+        dead_end = False
+        connectors = [False] * 26
+        connectors[self.deck.deck[location].index] = True
+        for deck_loc, card in enumerate(self.deck.deck):
+            if deck_loc < location:
+                continue
+            if not path[deck_loc]:
+                continue
+            if connectors[card.index]:
+                for index in successors[card.index]:
+                    connectors[index] = True
+        end = False
+        for assign in valid_assigns:
+            for i in range(2):
+                suit, rank = assign[i]
+                index = 5 * suit + rank
+                if connectors[index]:
+                    end = True
+                    break
+            if end:
+                break
+        dead_end = not end
+        # TODO: move this quickfix up to step one
+        if dead_end:
+            hand1_fixed = [tup for tup in hand1 if stacks[tup[0]] < tup[1]]
+            hand2_fixed = [tup for tup in hand2 if stacks[tup[0]] < tup[1]]
+            degrees_of_freedom = 25 - sum(stacks) - \
+                (len(hand1_fixed) + len(hand2_fixed) + len(pace0))
+            if degrees_of_freedom == 0:
+                if len(hand1_fixed) == 0 or len(hand2_fixed) == 0:
+                    return True
+
+        # special consideration for unique decks
+        if unique:
+            suit = valid_assigns[0][0][0]
+            index = 5 * suit + 3
+            queue = list(precursors[index])  # no mutating precursors
+            possibilities = set(queue)
+            while queue:
+                index = queue.pop()
+                if precursors[index] is None:
+                    continue
+                for pre_index in precursors[index]:
+                    if pre_index in possibilities:
+                        continue
+                    possibilities.add(pre_index)
+                    queue.append(pre_index)
+            incorrect_hand = False
+            if len(possibilities) != 0:
+                for index in possibilities:
+                    suit2, rank2 = divmod(index - 1, 5)
+                    rank2 += 1
+                    attempt = ((suit, 4), (suit2, rank2))
+                    if self._assign_helper(attempt, hand1, hand2):
+                        incorrect_hand = True
+                        break
+                    attempt = ((suit, 5), (suit2, rank2))
+                    if self._assign_helper(attempt, hand1, hand2, anti=True):
+                        incorrect_hand = True
+                        break
+                if incorrect_hand:
+                    return True
+        # endregion
 
 
-        if len(valid_assigns) == 0:
-            return True
         if unique:
             return False
         return len(valid_assigns) == 0
 
-    def _assign_helper(self, t, h1, h2):
-        return (t[0] in h1 and t[1] in h1) or (t[0] in h2 and t[1] in h2)
+    def _assign_helper(self, t, h1, h2, anti=False):
+        if not anti:
+            return (t[0] in h1 and t[1] in h1) or (t[0] in h2 and t[1] in h2)
+        return (t[0] in h1 and t[1] in h2) or (t[0] in h2 and t[1] in h1)
 
 class ShapeOptions:
     """Options for ShapeIdentifier."""
-    def __init__(self, bdrs=None, hand_capacity=None, playables_play=True):
+    def __init__(self, bdrs=None, hand_capacity=10, playables_play=True):
         self.bdrs = bdrs
         self.hand_capacity = hand_capacity
         self.check_for_hand_dist = None
