@@ -3,8 +3,12 @@
 import pytest
 from endgames.game import io, util
 
-TESTS = io.read_printout("assets/rama_old_decks.txt")
-ANSWERS = io.read_printout("assets/rama_old_decks_ans.txt")
+TESTS = io.read_printout("assets/rama_old_decks.txt") + \
+    io.read_printout("assets/rama_hard_decks.txt") + \
+    io.read_printout("assets/hand_dist_decks.txt")
+ANSWERS = io.read_printout("assets/rama_old_decks_ans.txt") + \
+    io.read_printout("assets/rama_hard_decks_ans.txt") + \
+    io.read_printout("assets/hand_dist_decks_ans.txt")
 
 @pytest.mark.parametrize("raw_deck, answer", list(zip(TESTS, ANSWERS)))
 def test_study(raw_deck, answer):
@@ -15,6 +19,6 @@ def test_study(raw_deck, answer):
         answer (list): 1-element list of string "True" or "False"
     """
     deck = util.create_bespoke_deck(raw_deck)
-    result = deck.check_for_infeasibility()
+    result = deck.check_for_infeasibility()[0]
     assert result is True or result is False
     assert str(result) == answer[0]
