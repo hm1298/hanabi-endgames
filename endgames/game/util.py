@@ -216,7 +216,11 @@ class Deck:
         if si is None:
             si = ShapeIdentifier()
         pf = PathFinder(self, si, 2, 5)
-        return pf.check_for_infeasibility()
+        try:
+            return pf.check_for_infeasibility()
+        except BaseException as e:
+            print(self)
+            raise e
 
 class PathFinder:
     """A multi-use solver for hanabi-like decks
@@ -587,12 +591,23 @@ class PathFinder:
         if len(valid_assigns) == 0:
             return True
 
+        # Returns early (infeasible) if unique and bad 34/35 dist
+        if unique:
+            suit = valid_assigns[0][0][0]
+            attempt = ((suit, 3), (suit, 4))
+            if self._assign_helper(attempt, hand1, hand2):
+                return True
+            attempt = ((suit, 3), (suit, 5))
+            if self._assign_helper(attempt, hand1, hand2, anti=True):
+                return True
+
         # Returns early (feasible) if there exists a pre pace 0 assignment
         for assign in valid_assigns:
             if assign[0] not in pace0 and assign[1] not in pace0:
                 if unique:
                     continue
                 return False
+
         # endregion
 
 
@@ -667,7 +682,7 @@ class PathFinder:
 
 
         # region ===== STEP FIVE =====
-        precursors = [None] * 26
+        precursors = [[] for _ in range(26)]
         successors = [[] for _ in range(26)]
         stacks = loc_to_stack[location]  # access only, no modifying
         for deck_loc, card in enumerate(self.deck.deck):
@@ -675,7 +690,6 @@ class PathFinder:
                 continue
             if not path[deck_loc]:
                 continue
-            precursors[card.index] = []
             for pre_index, interval in enumerate(turns_playable):
                 if interval is None:
                     continue
@@ -725,28 +739,42 @@ class PathFinder:
             possibilities = set(queue)
             while queue:
                 index = queue.pop()
-                if precursors[index] is None:
-                    continue
                 for pre_index in precursors[index]:
                     if pre_index in possibilities:
                         continue
                     possibilities.add(pre_index)
                     queue.append(pre_index)
-            incorrect_hand = False
+
+            # We can conclude infeasibility if all possibilities have
+            # either an issue with the placement of the unique suit's
+            # 5 (e.g., the possibility and the 5 are in different
+            # starting hands) or the placement of the unique suit's 4
+            # (e.g., the possibility and the 4 are in the same starting
+            # hands). If even one possibility does not conflict with
+            # the existing 45 assignment, then we cannot conclude
+            # infeasibility, so we move onto the next check, likely to
+            # return False.
+            bad_dist = True
             if len(possibilities) != 0:
                 for index in possibilities:
                     suit2, rank2 = divmod(index - 1, 5)
                     rank2 += 1
                     attempt = ((suit, 4), (suit2, rank2))
                     if self._assign_helper(attempt, hand1, hand2):
-                        incorrect_hand = True
-                        break
+                        continue
                     attempt = ((suit, 5), (suit2, rank2))
                     if self._assign_helper(attempt, hand1, hand2, anti=True):
-                        incorrect_hand = True
-                        break
-                if incorrect_hand:
+                        continue
+                    # if no issue with either 4 or 5, we are done here
+                    bad_dist = False
+                    break
+                if bad_dist:
                     return True
+            # TODO: correctly prove infeasibility on an ending like
+            # b4 x p5 r3 x, where b5 and r5 are in opposite starting
+            # hands. Currently, the code sees p5 could (must!) play
+            # into r3 but doesn't realize that p5 can only ever be
+            # held by the player holding b5 (thereby not holding r5).
         # endregion
 
 
