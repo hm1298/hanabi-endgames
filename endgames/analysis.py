@@ -3,7 +3,7 @@
 import time
 import pandas as pd
 from tqdm import tqdm
-from endgames.game.util import *  # pylint: disable=W0401,W0614
+from endgames.game.study import *  # pylint: disable=W0401,W0614
 
 def iterate_over_decks(num: int):
     """Performs some execution on num decks.

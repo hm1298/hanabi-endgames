@@ -1,7 +1,7 @@
 """Tests. Run with 'pytest --durations=0' for times."""
 
 import pytest
-from endgames.game import io, util
+from endgames.game import io, study
 
 TESTS = io.read_printout("assets/rama_old_decks.txt") + \
     io.read_printout("assets/rama_hard_decks.txt") + \
@@ -18,7 +18,7 @@ def test_study(raw_deck, answer):
         raw_deck (list): list of strings representing cards
         answer (list): 1-element list of string "True" or "False"
     """
-    deck = util.create_bespoke_deck(raw_deck)
+    deck = study.create_bespoke_deck(raw_deck)
     result = deck.check_for_infeasibility()[0]
     assert result is True or result is False
     assert str(result) == answer[0]
