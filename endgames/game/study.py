@@ -324,10 +324,17 @@ class PathFinder:
             _type_: _description_
         """
         # region ===== STEP ONE =====
-        hand1 = [card.interpret() for index, card in enumerate(self.deck.deck[0:5]) if path[index]]
-        hand2 = [card.interpret() for index, card in enumerate(self.deck.deck[5:10]) if path[index + 5]]
-        pace0 = [card.interpret() for index, card in enumerate(self.deck.deck[min(loc_to_cnct):]) if path[index + min(loc_to_cnct)]]
-        # print(pace0, "in", [card.interpret() if path[index] else None for index, card in enumerate(self.deck.deck)])
+        location = min(loc_to_cnct)
+        stacks = loc_to_stack[location]  # access only, no modifying
+        hand1 = [card.interpret() for index, card \
+                 in enumerate(self.deck.deck[0:5]) if path[index]]
+        hand2 = [card.interpret() for index, card \
+                 in enumerate(self.deck.deck[5:10]) if path[index + 5]]
+        hand1 = [tup for tup in hand1 if stacks[tup[0]] < tup[1]]
+        hand2 = [tup for tup in hand2 if stacks[tup[0]] < tup[1]]
+        pace0 = [card.interpret() for index, card \
+                 in enumerate(self.deck.deck[location:]) \
+                    if path[index + location]]
         # endregion
 
 
@@ -504,66 +511,57 @@ class PathFinder:
             if end:
                 break
         dead_end = not end
-        # TODO: move this quickfix up to step one
         if dead_end:
-            hand1_fixed = [tup for tup in hand1 if stacks[tup[0]] < tup[1]]
-            hand2_fixed = [tup for tup in hand2 if stacks[tup[0]] < tup[1]]
             degrees_of_freedom = 25 - sum(stacks) - \
-                (len(hand1_fixed) + len(hand2_fixed) + len(pace0))
+                (len(hand1) + len(hand2) + len(pace0))
+            # if no relevant cards appear after starting hand and pre
+            # pace 0, then players with no relevant cards in starting
+            # hand may lose to hand distribution because of a dead end
             if degrees_of_freedom == 0:
-                if len(hand1_fixed) == 0 or len(hand2_fixed) == 0:
+                if len(hand1) == 0 or len(hand2) == 0:
                     return True
 
         # special consideration for unique decks
         if unique:
             suit = valid_assigns[0][0][0]
             index = 5 * suit + 3
-            queue = list(precursors[index])  # no mutating precursors
-            possibilities = set(queue)
+            queue = list(precursors[index])  # do not mutate precursors
+            already_queued = set(queue)
+            good_dist = False
+            if len(queue) == 0:
+                good_dist = True
             while queue:
                 index = queue.pop()
-                for pre_index in precursors[index]:
-                    if pre_index in possibilities:
-                        continue
-                    possibilities.add(pre_index)
-                    queue.append(pre_index)
 
-            # We can conclude infeasibility if all possibilities have
-            # either an issue with the placement of the unique suit's
-            # 5 (e.g., the possibility and the 5 are in different
-            # starting hands) or the placement of the unique suit's 4
-            # (e.g., the possibility and the 4 are in the same starting
-            # hands). If even one possibility does not conflict with
-            # the existing 45 assignment, then we cannot conclude
-            # infeasibility, so we move onto the next check, likely to
-            # return False.
-            bad_dist = True
-            if len(possibilities) != 0:
-                for index in possibilities:
-                    suit2, rank2 = divmod(index - 1, 5)
-                    rank2 += 1
-                    attempt = ((suit, 4), (suit2, rank2))
-                    if self._assign_helper(attempt, hand1, hand2):
-                        continue
-                    attempt = ((suit, 5), (suit2, rank2))
-                    if self._assign_helper(attempt, hand1, hand2, anti=True):
-                        continue
-                    # if no issue with either 4 or 5, we are done here
-                    bad_dist = False
+                # if this card cannot be held in the correct hand for
+                # proper 345 distribution, then ignore and move on
+                suit2, rank2 = divmod(index - 1, 5)
+                rank2 += 1
+                attempt = ((suit, 4), (suit2, rank2))
+                if self._assign_helper(attempt, hand1, hand2):
+                    continue
+                attempt = ((suit, 5), (suit2, rank2))
+                if self._assign_helper(attempt, hand1, hand2, anti=True):
+                    continue
+
+                # if this card can be held in either hand, conclude
+                # we cannot prove infeasible, and move on
+                if len(precursors[index]) == 0:
+                    good_dist = True
                     break
-                if bad_dist:
-                    return True
-            # TODO: correctly prove infeasibility on an ending like
-            # b4 x p5 r3 x, where b5 and r5 are in opposite starting
-            # hands. Currently, the code sees p5 could (must!) play
-            # into r3 but doesn't realize that p5 can only ever be
-            # held by the player holding b5 (thereby not holding r5).
+
+                # otherwise, look at the card's precursors
+                for pre_index in precursors[index]:
+                    if pre_index in already_queued:
+                        continue
+                    already_queued.add(pre_index)
+                    queue.append(pre_index)
+            if not good_dist:
+                return True
         # endregion
 
 
-        if unique:
-            return False
-        return len(valid_assigns) == 0
+        return False
 
     def _assign_helper(self, t, h1, h2, anti=False):
         if not anti:
@@ -620,7 +618,6 @@ class ShapeIdentifier:
         cards (tuple): tuple of Cards
         counts (Counter): Amount of each type of card
         locations (list): list of Card locations
-        valid_subsequences (dict): Memoization of prior suit orderings
     """
     def __init__(self, options: ShapeOptions = None):
         """Initializes based on suit ordering and location info.
@@ -632,7 +629,6 @@ class ShapeIdentifier:
         if options is None:
             options = ShapeOptions()
         self.options = options
-        self.valid_subsequences = {}
 
         self._locations = None
         self._index = None
@@ -676,15 +672,6 @@ class ShapeIdentifier:
         It if hasn't, identifies it and adds to memory.
         """
         self.get_shape(cards)
-        # TODO: bugfix, currently the locations stored in
-        # self.valid_subsequences are ONLY accurate for the original
-        # list of cards used to populate its shape's entry. Need to
-        # use indices into shape[0] rather than the internal card
-        # locations. However, this requires passing shape[0] to
-        # identify_recurse() in some way or other, since currently it
-        # only has access to the class attribute _locations.
-        # if shape not in self.valid_subsequences:
-            # self.valid_subsequences[shape] = tuple(self.identify_recurse())
         return tuple(self.identify_recurse())
 
     def identify_recurse(self):
@@ -771,8 +758,8 @@ if __name__ == "__main__":
     # print(DECK.check_for_infeasibility())
     FILE = "assets/rama_hard_decks.txt"
     D_NO = 8
-    for i, d in enumerate(read_printout(FILE)):
-        if i != D_NO:
+    for no, d in enumerate(read_printout(FILE)):
+        if no != D_NO:
             continue
         DECK = create_bespoke_deck(d)
         print(DECK.check_for_infeasibility())

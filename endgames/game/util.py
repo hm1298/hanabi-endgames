@@ -221,6 +221,7 @@ class Deck:
             return pf.check_for_infeasibility()
         except BaseException as e:
             print(self)
+            print(create_hypo_url(self))
             raise e
 
 class Card:
