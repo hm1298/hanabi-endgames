@@ -262,3 +262,38 @@ def create_bespoke_deck(deck, variant=None):
     result = Deck(variant)
     result.set_deck(deck)
     return result
+
+def create_hypo_url(deck, num_players=2):
+    """Create URL for loading deck on Hanab Live.
+
+    Translated from the https://hanab.live/ Github:
+    https://github.com/Hanabi-Live/hanabi-live/blob/cfde8020cd110bc051aef79a41d8ee4e13680e99/packages/client/src/lobby/hypoCompress.ts
+
+    Args:
+        deck (Deck): deck for use in hypothetical
+
+    Returns:
+        str: hanab live url
+    """
+    prefix = "https://hanab.live/shared-replay-json/"
+    base_62 = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    result = ""
+
+    # First section: number of players, rank min, rank max, and deck
+    result += str(num_players)
+    result += "15"  # represents rank min & rank max
+    result += "".join(base_62[card.index - 1] for card in deck.deck)
+    result += ","
+
+    # Second section: game actions
+    # We only use a trivial action here; Alice plays/bombs slot 1
+    result += "00ae"  # the two numbers describe available actions
+    result += ","
+
+    # Third section: variant number
+    result += str(deck.variant.id)
+
+    # Now add '-'s to the URL for readability (line breaks)
+    result = "-".join(result[i:i+20] for i in range(0, len(result), 20))
+
+    return prefix + result
