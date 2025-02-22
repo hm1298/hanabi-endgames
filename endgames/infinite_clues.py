@@ -161,7 +161,7 @@ class InfiniteClueHanabi(Hanabi):
 
     def check_win_condition(self, gs):
         """Returns True if won."""
-        return sum(gs[0]) == 25  # probably should change gamestate
+        return sum(gs[0]) == 5 * len(self.deck.variant.suits)
 
     def check_loss_condition(self, gs):
         """Returns True if lost."""

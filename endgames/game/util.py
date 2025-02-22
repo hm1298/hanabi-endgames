@@ -220,6 +220,7 @@ class Deck:
         try:
             return pf.check_for_infeasibility()
         except BaseException as e:
+            print("An error occurred on the following deck.")
             print(self)
             print(create_hypo_url(self))
             raise e
@@ -246,7 +247,7 @@ class Card:
         self.value = (suit_index << 31) | rank
         self.suit = suit_index
         self.rank = rank
-        assert self.suit != 5  # fixed an indexing error
+        # assert self.suit != 5  # fixed an indexing error
         self.index = 5 * self.suit + self.rank
         self.location = None
     def interpret(self):

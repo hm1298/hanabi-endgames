@@ -165,7 +165,7 @@ class PathFinder:
 
     def _pathify(self, locs):
         """Converts a list of locations into a boolean path."""
-        path = [False] * 50
+        path = [False] * len(self.deck.deck)
         for loc in locs:
             path[loc] = True
         return path
@@ -175,7 +175,7 @@ class PathFinder:
         index = len(self.deck.deck) - 1
         curr = path[index]
         pace = num_final_plays
-        stacks = [0, 0, 0, 0, 0]
+        stacks = [0] * len(self.deck.variant.suits)
         # checks for BDR loss
         if curr:
             card = self.deck.deck[index]
@@ -183,7 +183,7 @@ class PathFinder:
                 return True
             suit, rank = card.interpret()
             stacks[suit] = max(stacks[suit], 6 - rank)  # should be 1
-        while pace < 25:  # 25 is max score
+        while pace < 5 * len(self.deck.variant.suits):  # max score
             pace += 1
             index -= 1
             curr = path[index]
@@ -198,7 +198,7 @@ class PathFinder:
     def _check_for_capacity_loss(self, path, capacity):
         """Checks if the path yields a hand capacity loss."""
         hand = set()
-        stacks = [0, 0, 0, 0, 0]
+        stacks = [0] * len(self.deck.variant.suits)
         for index, curr in enumerate(path):
             if not curr:
                 continue
@@ -229,14 +229,14 @@ class PathFinder:
         index = len(self.deck.deck) - 1
         curr = path[index]
         pace = self.num_players
-        stacks = [0, 0, 0, 0, 0]
+        stacks = [0] * len(self.deck.variant.suits)
         locations = []
         # checks for BDR loss
         if curr:
             card = self.deck.deck[index]
             suit, rank = card.interpret()
             stacks[suit] = max(stacks[suit], 6 - rank)  # should be 1
-        while pace < 25:  # 25 is max score
+        while pace < 5 * len(self.deck.variant.suits):  # max score
             pace += 1
             index -= 1
             curr = path[index]
@@ -252,8 +252,8 @@ class PathFinder:
         locs_to_entries = {loc: [] for loc in locations}
         locs_to_stacks = {loc: [] for loc in locations}
         hand = set()
-        stacks = [0, 0, 0, 0, 0]
-        prev, reached_pace_zero = (0, 0, 0, 0, 0), False
+        stacks = [0] * len(self.deck.variant.suits)
+        prev, reached_pace_zero = tuple(stacks), False
         for index, curr in enumerate(path):
             if not curr:
                 continue
@@ -402,10 +402,10 @@ class PathFinder:
 
 
         # region ===== STEP FOUR =====
-        turns_playable = [None] * 26
+        turns_playable = [None] * (5 * len(self.deck.variant.suits) + 1)
         location = min(loc_to_cnct)
         stacks = list(loc_to_stack[location])
-        for suit in range(5):
+        for suit in range(len(self.deck.variant.suits)):
             for rank in range(stacks[suit] + 1, 6):
                 index = 5 * suit + rank
                 turns_playable[index] = []
@@ -434,7 +434,7 @@ class PathFinder:
                 hand.add(self.deck.deck[draw_loc].value)
 
         # Now finds latest turns greedily for cards of each suit in turn
-        for chosen_suit in range(5):
+        for chosen_suit in range(len(self.deck.variant.suits)):
             stacks = list(loc_to_stack[location])
             hand = set(_temp_hand)
             for draw_loc in range(location + 1, len(path) + 2):
@@ -472,8 +472,8 @@ class PathFinder:
 
 
         # region ===== STEP FIVE =====
-        precursors = [[] for _ in range(26)]
-        successors = [[] for _ in range(26)]
+        precursors = [[] for _ in range(5 * len(self.deck.variant.suits) + 1)]
+        successors = [[] for _ in range(5 * len(self.deck.variant.suits) + 1)]
         stacks = loc_to_stack[location]  # access only, no modifying
         for deck_loc, card in enumerate(self.deck.deck):
             if deck_loc < location:
@@ -490,7 +490,7 @@ class PathFinder:
         # checks if the pace 0 playable can possibly lead to a card
         # that can be played on the last turn
         dead_end = False
-        connectors = [False] * 26
+        connectors = [False] * (5 * len(self.deck.variant.suits) + 1)
         connectors[self.deck.deck[location].index] = True
         for deck_loc, card in enumerate(self.deck.deck):
             if deck_loc < location:
@@ -512,7 +512,7 @@ class PathFinder:
                 break
         dead_end = not end
         if dead_end:
-            degrees_of_freedom = 25 - sum(stacks) - \
+            degrees_of_freedom = 5 * len(self.deck.variant.suits) - sum(stacks) - \
                 (len(hand1) + len(hand2) + len(pace0))
             # if no relevant cards appear after starting hand and pre
             # pace 0, then players with no relevant cards in starting

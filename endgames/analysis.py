@@ -8,7 +8,7 @@ from tqdm import tqdm
 from endgames.game.study import *  # pylint: disable=W0401,W0614
 from endgames.game.util import create_hypo_url
 
-def iterate_over_decks(num: int):
+def iterate_over_decks(num: int, variant_name: str="No Variant"):
     """Performs some execution on num decks.
 
     Args:
@@ -17,9 +17,9 @@ def iterate_over_decks(num: int):
     data, column_names = [], ["Seed", "Deck", "Infeasible", "Forced to Pace Zero", "Duration"]
     si = ShapeIdentifier()
     for seed in tqdm(range(1, num + 1)):
-        seed = "dashing" + str(seed)
+        seed = "egocentric" + str(seed)
         start = time.time()
-        deck = Deck("No Variant")
+        deck = Deck(variant_name)
         deck.shuffle(seed)
         inf, forced_pace_zero = deck.check_for_infeasibility(si)
         end = time.time()
@@ -28,7 +28,7 @@ def iterate_over_decks(num: int):
     df = pd.DataFrame(data, columns=column_names)
     print((df["Infeasible"]).sum() / len(df["Infeasible"]))
     print(max(df["Duration"]), min(df["Duration"]))
-    df.to_csv('dashing5_output.csv', index=False)
+    df.to_csv('egocentric_dark6_output.csv', index=False)
 
 def print_urls(seeds):
     """Prints URLs of decks with seeds in list seeds."""
@@ -41,25 +41,22 @@ def print_urls(seeds):
     return result
 
 if __name__ == "__main__":
-    iterate_over_decks(10 ** 6)
-    df1 = pd.read_csv("dashing4_output.csv")
-    df2 = pd.read_csv("dashing5_output.csv")
-    print("read")
-    d1 = df1.drop(columns=['Duration'])
-    d2 = df2.drop(columns=['Duration'])
-    print(sum(d1["Infeasible"]))
-    print(sum(d2["Infeasible"]))
-    difference = ~d1.eq(d2)
-    rows_with_differences = difference.any(axis=1)
-    differences = d2[rows_with_differences]
-    differences["URL"] = print_urls(differences["Seed"])
-    differences.to_csv("dashing4_5_differences.csv", index=False)
+    iterate_over_decks(10 ** 6, "Black (6 Suits)")
+    df1 = pd.read_csv("egocentric_dark6_output.csv")
+    # df2 = pd.read_csv("dashing5_output.csv")
+    # print("read")
+    # d1 = df1.drop(columns=['Duration'])
+    # d2 = df2.drop(columns=['Duration'])
+    # print(sum(d1["Infeasible"]))
+    # print(sum(d2["Infeasible"]))
+    # difference = ~d1.eq(d2)
+    # rows_with_differences = difference.any(axis=1)
+    # differences = d2[rows_with_differences]
+    # differences["URL"] = print_urls(differences["Seed"])
+    # differences.to_csv("dashing4_5_differences.csv", index=False)
     print()
     print(df1.head())
-    print((df1["Infeasible"]).sum() / len(df1["Infeasible"]))
-    print(max(df1["Duration"]), min(df1["Duration"]))
-    print([type(x) for x in df1["Infeasible"].unique()])
-    print(max(df1[df1["Infeasible"]]["Duration"]))
+    print("Percent infeasible:", (sum(df1["Infeasible"])) / len(df1["Infeasible"]))
     infeasible = df1[df1["Infeasible"]]
     feasible = df1[~df1["Infeasible"]]
     print("Avg feasible:", f"""{sum(feasible["Duration"]) / len(feasible["Duration"]):.6f}""", "seconds")
